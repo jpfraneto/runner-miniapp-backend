@@ -208,6 +208,14 @@ export class RunnerWorkflowService {
       const user = await this.getUserByFid(data.userFid);
       const userId = user.id; // Database primary key
 
+      // Step 0.5: Check if user is banned
+      const banStatus = await this.isUserBanned(userId);
+      if (banStatus.isBanned) {
+        throw new BadRequestException(
+          `Your account is currently suspended. You can resume using RUNNER on ${banStatus.banExpiresAt?.toLocaleDateString()}.`,
+        );
+      }
+
       this.logger.log(
         `Starting workout session processing for user FID ${data.userFid} (DB ID: ${userId})`,
       );
@@ -233,12 +241,37 @@ export class RunnerWorkflowService {
         `Extracted workout data with ${Math.round(extractedData.confidence * 100)}% confidence`,
       );
 
+      // Step 2.5: Validate the workout data
+      const validationResult = await this.validateWorkoutData(
+        userId,
+        extractedData,
+      );
+
+      if (!validationResult.isValid) {
+        this.logger.warn(
+          `Invalid workout detected for user ${userId}: ${validationResult.reason}`,
+        );
+
+        // Check if user should be banned
+        const banResult = await this.handleInvalidWorkoutSubmission(
+          userId,
+          validationResult,
+        );
+
+        if (banResult.isBanned) {
+          throw new BadRequestException(
+            `Your account has been temporarily suspended for submitting invalid workouts. You can resume using RUNNER on ${banResult.banExpiresAt.toLocaleDateString()}.`,
+          );
+        }
+      }
+
       // Step 3: Create or update completed run record
       const completedRun = await this.createCompletedRun(
         data,
         userId,
         screenshotUrls,
         extractedData,
+        validationResult,
       );
 
       // Step 4: Check for personal bests
@@ -283,6 +316,11 @@ export class RunnerWorkflowService {
     userId: number, // Database primary key
     screenshotUrls: string[],
     extractedData: ExtractedWorkoutData,
+    validationResult?: {
+      isValid: boolean;
+      reason?: string;
+      confidence: number;
+    },
   ): Promise<CompletedRun> {
     const completedRun = this.completedRunRepo.create({
       userId: userId, // Use the database ID, not Farcaster ID
@@ -309,6 +347,8 @@ export class RunnerWorkflowService {
       verified: false, // User needs to verify the extracted data
       notes: data.notes,
       extractedAt: new Date(),
+      isValidWorkout: validationResult?.isValid ?? true, // Default to true if no validation result
+      validationNotes: validationResult?.reason || null,
     });
 
     return this.completedRunRepo.save(completedRun);
@@ -1198,5 +1238,290 @@ export class RunnerWorkflowService {
       return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // ================================
+  // WORKOUT VALIDATION SYSTEM
+  // ================================
+
+  /**
+   * Validate if the extracted workout data represents a legitimate workout
+   */
+  private async validateWorkoutData(
+    userId: number,
+    extractedData: ExtractedWorkoutData,
+  ): Promise<{
+    isValid: boolean;
+    reason?: string;
+    confidence: number;
+  }> {
+    // Check if this was identified as a non-workout image
+    if (!extractedData.isWorkoutImage) {
+      return {
+        isValid: false,
+        reason:
+          'Non-workout image detected - please upload screenshots from your running app',
+        confidence: 0,
+      };
+    }
+
+    // Check if we have the minimum required data
+    if (!extractedData.distance || !extractedData.duration) {
+      return {
+        isValid: false,
+        reason: 'Missing essential workout data (distance or duration)',
+        confidence: extractedData.confidence || 0,
+      };
+    }
+
+    // Validate distance (must be reasonable for a run)
+    if (extractedData.distance < 0.1 || extractedData.distance > 100) {
+      return {
+        isValid: false,
+        reason: `Unrealistic distance: ${extractedData.distance}km`,
+        confidence: extractedData.confidence || 0,
+      };
+    }
+
+    // Validate duration (must be reasonable for a run)
+    if (extractedData.duration < 0.5 || extractedData.duration > 600) {
+      return {
+        isValid: false,
+        reason: `Unrealistic duration: ${extractedData.duration} minutes`,
+        confidence: extractedData.confidence || 0,
+      };
+    }
+
+    // Validate pace (must be reasonable for a run)
+    if (extractedData.pace) {
+      const paceMinutes = this.calculatePaceMinutes(extractedData.pace);
+      if (paceMinutes && (paceMinutes < 2 || paceMinutes > 20)) {
+        return {
+          isValid: false,
+          reason: `Unrealistic pace: ${extractedData.pace}`,
+          confidence: extractedData.confidence || 0,
+        };
+      }
+    }
+
+    // Check for suspicious patterns
+    const suspiciousPatterns = this.detectSuspiciousPatterns(extractedData);
+    if (suspiciousPatterns.length > 0) {
+      return {
+        isValid: false,
+        reason: `Suspicious workout patterns detected: ${suspiciousPatterns.join(', ')}`,
+        confidence: extractedData.confidence || 0,
+      };
+    }
+
+    // Check confidence threshold
+    if (extractedData.confidence < 0.3) {
+      return {
+        isValid: false,
+        reason:
+          'Low confidence in data extraction - please ensure clear screenshots',
+        confidence: extractedData.confidence,
+      };
+    }
+
+    return {
+      isValid: true,
+      confidence: extractedData.confidence,
+    };
+  }
+
+  /**
+   * Detect suspicious patterns in workout data
+   */
+  private detectSuspiciousPatterns(
+    extractedData: ExtractedWorkoutData,
+  ): string[] {
+    const patterns: string[] = [];
+
+    // Check for impossibly fast paces
+    if (extractedData.pace) {
+      const paceMinutes = this.calculatePaceMinutes(extractedData.pace);
+      if (paceMinutes && paceMinutes < 3) {
+        patterns.push('extremely fast pace');
+      }
+    }
+
+    // Check for impossibly long distances in short times
+    if (extractedData.distance && extractedData.duration) {
+      const avgPace = extractedData.duration / extractedData.distance;
+      if (avgPace < 2) {
+        patterns.push('impossible speed for distance');
+      }
+    }
+
+    // Check for suspicious heart rate data
+    if (
+      extractedData.avgHeartRate &&
+      (extractedData.avgHeartRate < 40 || extractedData.avgHeartRate > 220)
+    ) {
+      patterns.push('unrealistic heart rate');
+    }
+
+    if (
+      extractedData.maxHeartRate &&
+      (extractedData.maxHeartRate < 60 || extractedData.maxHeartRate > 250)
+    ) {
+      patterns.push('unrealistic max heart rate');
+    }
+
+    // Check for suspicious calorie counts
+    if (extractedData.calories && extractedData.duration) {
+      const caloriesPerMinute = extractedData.calories / extractedData.duration;
+      if (caloriesPerMinute > 20) {
+        patterns.push('unrealistic calorie burn rate');
+      }
+    }
+
+    return patterns;
+  }
+
+  /**
+   * Handle invalid workout submission and manage user bans
+   */
+  private async handleInvalidWorkoutSubmission(
+    userId: number,
+    validationResult: { isValid: boolean; reason?: string; confidence: number },
+  ): Promise<{
+    isBanned: boolean;
+    banExpiresAt?: Date;
+    invalidSubmissions: number;
+  }> {
+    // Get current user
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    // Check if user is already banned
+    if (user.isBanned) {
+      const now = new Date();
+      if (user.banExpiresAt && now < user.banExpiresAt) {
+        return {
+          isBanned: true,
+          banExpiresAt: user.banExpiresAt,
+          invalidSubmissions: user.invalidWorkoutSubmissions,
+        };
+      } else {
+        // Ban has expired, reset it
+        await this.userRepo.update(userId, {
+          isBanned: false,
+          bannedAt: null,
+          banExpiresAt: null,
+        });
+      }
+    }
+
+    // Increment invalid submission count
+    const newInvalidCount = user.invalidWorkoutSubmissions + 1;
+
+    // Check if user should be banned (after 3 invalid submissions)
+    if (newInvalidCount >= 3) {
+      const banExpiresAt = new Date();
+      banExpiresAt.setDate(banExpiresAt.getDate() + 7); // 1 week ban
+
+      const banHistory = user.banHistory || [];
+      banHistory.push({
+        bannedAt: new Date().toISOString(),
+        expiresAt: banExpiresAt.toISOString(),
+        reason: `Multiple invalid workout submissions (${newInvalidCount} total)`,
+        invalidSubmissions: newInvalidCount,
+      });
+
+      // Apply the ban
+      await this.userRepo.update(userId, {
+        invalidWorkoutSubmissions: newInvalidCount,
+        isBanned: true,
+        bannedAt: new Date(),
+        banExpiresAt,
+        banHistory,
+      });
+
+      this.logger.warn(
+        `User ${userId} banned for 1 week due to ${newInvalidCount} invalid workout submissions`,
+      );
+
+      return {
+        isBanned: true,
+        banExpiresAt,
+        invalidSubmissions: newInvalidCount,
+      };
+    } else {
+      // Just increment the count
+      await this.userRepo.update(userId, {
+        invalidWorkoutSubmissions: newInvalidCount,
+      });
+
+      this.logger.warn(
+        `User ${userId} has ${newInvalidCount} invalid workout submissions`,
+      );
+
+      return {
+        isBanned: false,
+        invalidSubmissions: newInvalidCount,
+      };
+    }
+  }
+
+  /**
+   * Check if user is currently banned
+   */
+  public async isUserBanned(userId: number): Promise<{
+    isBanned: boolean;
+    banExpiresAt?: Date;
+    remainingDays?: number;
+  }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user || !user.isBanned) {
+      return { isBanned: false };
+    }
+
+    const now = new Date();
+    if (!user.banExpiresAt || now >= user.banExpiresAt) {
+      // Ban has expired, reset it
+      await this.userRepo.update(userId, {
+        isBanned: false,
+        bannedAt: null,
+        banExpiresAt: null,
+      });
+      return { isBanned: false };
+    }
+
+    const remainingMs = user.banExpiresAt.getTime() - now.getTime();
+    const remainingDays = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
+
+    return {
+      isBanned: true,
+      banExpiresAt: user.banExpiresAt,
+      remainingDays,
+    };
+  }
+
+  /**
+   * Get user's workout validation status
+   */
+  public async getUserValidationStatus(userFid: number): Promise<{
+    invalidSubmissions: number;
+    isBanned: boolean;
+    banExpiresAt?: Date;
+    remainingDays?: number;
+    warningsRemaining: number;
+  }> {
+    const user = await this.getUserByFid(userFid);
+    const banStatus = await this.isUserBanned(user.id);
+
+    const warningsRemaining = Math.max(0, 3 - user.invalidWorkoutSubmissions);
+
+    return {
+      invalidSubmissions: user.invalidWorkoutSubmissions,
+      isBanned: banStatus.isBanned,
+      banExpiresAt: banStatus.banExpiresAt,
+      remainingDays: banStatus.remainingDays,
+      warningsRemaining,
+    };
   }
 }

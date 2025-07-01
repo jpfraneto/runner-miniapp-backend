@@ -152,6 +152,12 @@ export class CompletedRun {
   @Column({ type: 'timestamp', nullable: true })
   verifiedAt: Date;
 
+  @Column({ default: false })
+  isValidWorkout: boolean; // Whether this was a valid workout submission
+
+  @Column({ type: 'text', nullable: true })
+  validationNotes: string; // Notes about why workout was invalid
+
   @Column({ type: 'text', nullable: true })
   notes: string; // User's notes about the run
 

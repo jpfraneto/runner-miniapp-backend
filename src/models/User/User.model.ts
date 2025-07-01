@@ -159,6 +159,30 @@ export class User {
   followers: number;
 
   // ================================
+  // WORKOUT VALIDATION & BAN SYSTEM
+  // ================================
+
+  @Column({ default: 0 })
+  invalidWorkoutSubmissions: number; // Count of invalid workout submissions
+
+  @Column({ default: false })
+  isBanned: boolean; // Whether user is currently banned
+
+  @Column({ type: 'timestamp', nullable: true })
+  bannedAt: Date; // When the ban started
+
+  @Column({ type: 'timestamp', nullable: true })
+  banExpiresAt: Date; // When the ban expires (1 week from ban start)
+
+  @Column({ type: 'json', nullable: true })
+  banHistory: Array<{
+    bannedAt: string;
+    expiresAt: string;
+    reason: string;
+    invalidSubmissions: number;
+  }>;
+
+  // ================================
   // PREFERENCES
   // ================================
 

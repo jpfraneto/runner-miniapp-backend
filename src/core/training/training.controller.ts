@@ -463,4 +463,28 @@ export class TrainingController {
       );
     }
   }
+
+  /**
+   * Get user's workout validation status
+   */
+  @Get('/runner-workflow/validation-status')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get user workout validation status' })
+  async getValidationStatus(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      const validationStatus =
+        await this.runnerWorkflowService.getUserValidationStatus(session.sub);
+      return hasResponse(res, validationStatus);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getValidationStatus',
+        'Unable to retrieve validation status.',
+      );
+    }
+  }
 }

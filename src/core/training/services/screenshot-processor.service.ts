@@ -30,12 +30,26 @@ export interface ExtractedWorkoutData {
   runningApp?: string; // Nike Run Club, Strava, Garmin, etc.
   confidence: number; // 0-1 confidence score
   extractedText?: string[]; // raw OCR text for debugging
+  isWorkoutImage?: boolean; // New field to indicate if this is actually a workout
+  errorMessage?: string; // Fun message for non-workout images
 }
 
 @Injectable()
 export class ScreenshotProcessorService {
   private readonly logger = new Logger(ScreenshotProcessorService.name);
   private readonly openai: OpenAI;
+
+  // Fun messages for different types of non-workout images
+  private readonly funMessages = [
+    "🏃‍♂️ That's a great photo, but I was expecting to see some running stats! Try uploading a screenshot from your running app instead.",
+    '📱 Looks like you sent the wrong screenshot! I need to see your workout data from apps like Strava, Nike Run Club, or Garmin.',
+    "🤔 I can see the image, but it doesn't look like a running app screenshot. Show me those sweet running stats!",
+    "🏃‍♀️ Nice picture! But I'm specifically looking for workout screenshots with distance, time, and pace data.",
+    "📊 That image doesn't contain any workout data I can recognize. Try sharing a screenshot from your fitness app!",
+    '🎯 Almost there! I need screenshots that show running metrics like distance, pace, and time from your running app.',
+    "🏃 I see what you uploaded, but it's not a workout screenshot. Let's see those running achievements!",
+    "📸 Great photo, but I'm hunting for running data! Upload a screenshot from your fitness tracking app.",
+  ];
 
   constructor() {
     console.log('🔧 Initializing ScreenshotProcessorService');
@@ -67,13 +81,20 @@ export class ScreenshotProcessorService {
         await this.extractWorkoutDataFromImages(base64Images);
 
       console.log('📊 Extracted data:', JSON.stringify(extractedData, null, 2));
+
+      // Check if this wasn't a workout image
+      if (!extractedData.isWorkoutImage) {
+        this.logger.log('📷 Non-workout image detected, returning fun message');
+        return extractedData;
+      }
+
       this.logger.log(
         `Successfully extracted workout data with ${Math.round(extractedData.confidence * 100)}% confidence`,
       );
       return extractedData;
     } catch (error) {
       console.error('❌ Screenshot processing failed:', error);
-      this.logger.error(`Failed to process screenshots:`, error);
+      this.logger.error('Failed to process screenshots:', error);
       throw new Error(`Screenshot processing failed: ${error.message}`);
     }
   }
@@ -84,11 +105,22 @@ export class ScreenshotProcessorService {
     console.log('🔍 Starting workout data extraction from images');
     const systemPrompt = `You are an expert at analyzing running app screenshots and extracting workout data with high accuracy.
 
-Analyze the provided screenshots from running apps (Nike Run Club, Strava, Garmin Connect, Apple Fitness, Adidas Running, MapMyRun, etc.) and extract all available workout information.
+CRITICAL: First, determine if the provided images are actually screenshots from running/fitness apps or contain workout data.
+
+If the images are NOT workout-related (e.g., random photos, food, selfies, landscapes, memes, etc.), return this exact JSON structure:
+{
+  "isWorkoutImage": false,
+  "confidence": 0,
+  "errorMessage": "not_workout_image"
+}
+
+If the images ARE from running apps or contain workout data, analyze them and extract all available information.
 
 IMPORTANT: You must return ONLY a valid JSON object with the following structure. Do not include any explanatory text before or after the JSON.
 
+For workout images, return:
 {
+  "isWorkoutImage": true,
   "distance": number, // in km (convert from miles if needed)
   "duration": number, // total time in minutes (convert from hours:minutes:seconds)
   "pace": "string", // average pace like "5:30/km" or "8:30/mile"
@@ -119,7 +151,24 @@ IMPORTANT: You must return ONLY a valid JSON object with the following structure
   "extractedText": ["string"] // raw text you can see for debugging
 }
 
-Extraction Guidelines:
+Workout Image Detection:
+Look for these indicators that it's a workout screenshot:
+- Running app UI elements (Nike Run Club, Strava, Garmin, Apple Fitness, etc.)
+- Workout metrics like distance, time, pace, calories
+- Map routes or GPS tracking
+- Heart rate data or graphs
+- Split times or lap information
+- Exercise summaries or achievements
+- Fitness app branding or logos
+
+Non-Workout Images (return isWorkoutImage: false):
+- Regular photos, selfies, landscapes
+- Food pictures, memes, screenshots of other apps
+- Text messages, social media posts
+- Random documents or screenshots
+- Anything without fitness/workout data
+
+Extraction Guidelines for Valid Workout Images:
 - Only include fields where you can clearly see the data
 - Be precise with numbers - don't guess or estimate
 - Convert all measurements to metric (km, meters, Celsius)
@@ -131,7 +180,7 @@ Extraction Guidelines:
 - Extract route information if shown (route name, indoor/outdoor)
 - Look for weather data if displayed
 
-Common Apps to Identify:
+Common Running Apps to Identify:
 - Nike Run Club (orange/black theme, swoosh logo)
 - Strava (orange/white theme, Strava logo)
 - Garmin Connect (blue/white theme, Garmin branding)
@@ -157,7 +206,7 @@ Return the JSON object only.`;
             content: [
               {
                 type: 'text',
-                text: 'Please analyze these running app screenshots and extract all workout data. Return only the JSON object.',
+                text: 'Please analyze these images. First determine if they are workout screenshots, then extract data if they are. Return only the JSON object.',
               },
               ...base64Images.map((image) => ({
                 type: 'image_url' as const,
@@ -174,7 +223,8 @@ Return the JSON object only.`;
 
       console.log('✅ Received response from GPT-4 Vision');
       const content = response.choices[0]?.message?.content;
-      console.log('IN HERE, the content is', content);
+      console.log('📄 GPT-4 Vision response:', content);
+
       if (!content) {
         console.error('❌ No content in GPT-4 Vision response');
         throw new Error('No response from GPT-4 Vision');
@@ -197,8 +247,19 @@ Return the JSON object only.`;
       console.log('📝 Parsing JSON response');
       const extractedData: ExtractedWorkoutData = JSON.parse(jsonString);
 
-      // Validate and sanitize the extracted data
-      console.log('✨ Validating extracted data');
+      // Check if this is not a workout image
+      if (extractedData.isWorkoutImage === false) {
+        console.log('📷 Non-workout image detected');
+        return {
+          isWorkoutImage: false,
+          confidence: 0,
+          errorMessage: this.getRandomFunMessage(),
+          extractedText: ['Image does not contain workout data'],
+        };
+      }
+
+      // Validate and sanitize the extracted data for workout images
+      console.log('✨ Validating extracted workout data');
       return this.validateExtractedData(extractedData);
     } catch (error) {
       console.error('❌ GPT-4 Vision API error:', error);
@@ -206,15 +267,22 @@ Return the JSON object only.`;
 
       // Return a fallback response with low confidence
       return {
+        isWorkoutImage: true, // Assume it was a workout attempt
         confidence: 0,
         extractedText: [`Error processing images: ${error.message}`],
       };
     }
   }
 
+  private getRandomFunMessage(): string {
+    const randomIndex = Math.floor(Math.random() * this.funMessages.length);
+    return this.funMessages[randomIndex];
+  }
+
   private validateExtractedData(data: any): ExtractedWorkoutData {
     console.log('🔍 Starting data validation');
     const validated: ExtractedWorkoutData = {
+      isWorkoutImage: true,
       confidence: 0,
     };
 
@@ -416,7 +484,7 @@ Return the JSON object only.`;
       console.log('🏥 Running health check');
       // Test with a simple request
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
+        model: 'gpt-4o',
         max_tokens: 10,
         messages: [
           {
@@ -429,14 +497,14 @@ Return the JSON object only.`;
       console.log('✅ Health check successful');
       return {
         status: response ? 'healthy' : 'unhealthy',
-        model: 'gpt-4-vision-preview',
+        model: 'gpt-4o',
       };
     } catch (error) {
       console.error('❌ Health check failed:', error);
       this.logger.error('Screenshot processor health check failed:', error);
       return {
         status: 'unhealthy',
-        model: 'gpt-4-vision-preview',
+        model: 'gpt-4o',
       };
     }
   }
