@@ -1,0 +1,466 @@
+// src/core/training/training.controller.ts
+
+// Dependencies
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  UseGuards,
+  Req,
+  Res,
+  UseInterceptors,
+  UploadedFiles,
+  ParseIntPipe,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import { Response } from 'express';
+import { FilesInterceptor } from '@nestjs/platform-express';
+
+// Services
+import { TrainingService } from './services/training.service';
+import { RunnerWorkflowService } from './services/runner-workflow.service';
+
+// Security
+import { AuthorizationGuard, QuickAuthPayload } from '../../security/guards';
+import { Session } from '../../security/decorators';
+
+// Utils
+import { hasResponse, hasError, HttpStatus } from '../../utils';
+
+/**
+ * Training controller for RUNNER training plans and workout management.
+ *
+ * This controller handles:
+ * - Training plan creation and management
+ * - Weekly mission generation
+ * - AI-powered plan generation
+ * - Workout session tracking
+ * - Screenshot processing and AI extraction
+ * - Performance analytics
+ */
+@ApiTags('training-service')
+@Controller('training-service')
+export class TrainingController {
+  constructor(
+    private readonly trainingService: TrainingService,
+    private readonly runnerWorkflowService: RunnerWorkflowService,
+  ) {}
+
+  /**
+   * Get user's current training plan
+   */
+  @Get('/training-plan')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get user training plan' })
+  async getTrainingPlan(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      const plan = await this.trainingService.getCurrentPlan(session.sub);
+      return hasResponse(res, plan);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getTrainingPlan',
+        'Unable to retrieve training plan.',
+      );
+    }
+  }
+
+  /**
+   * Create a new training plan
+   */
+  @Post('/training-plan')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Create new training plan' })
+  async createTrainingPlan(
+    @Session() session: QuickAuthPayload,
+    @Body() planData: any,
+    @Res() res: Response,
+  ) {
+    try {
+      const plan = await this.trainingService.createPlan(session.sub, planData);
+      return hasResponse(res, plan);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'createTrainingPlan',
+        'Unable to create training plan.',
+      );
+    }
+  }
+
+  /**
+   * Update training plan
+   */
+  @Put('/training-plan/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Update training plan' })
+  async updateTrainingPlan(
+    @Session() session: QuickAuthPayload,
+    @Param('id') planId: string,
+    @Body() planData: any,
+    @Res() res: Response,
+  ) {
+    try {
+      const plan = await this.trainingService.updatePlan(
+        session.sub,
+        planId,
+        planData,
+      );
+      return hasResponse(res, plan);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'updateTrainingPlan',
+        'Unable to update training plan.',
+      );
+    }
+  }
+
+  /**
+   * Generate AI-powered training plan
+   */
+  @Post('/training-plan/generate-ai')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Generate AI-powered training plan' })
+  async generateAIPlan(
+    @Session() session: QuickAuthPayload,
+    @Body() preferences: any,
+    @Res() res: Response,
+  ) {
+    try {
+      const plan = await this.trainingService.generateAIPlan(
+        session.sub,
+        preferences,
+      );
+      return hasResponse(res, plan);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'generateAIPlan',
+        'Unable to generate AI training plan.',
+      );
+    }
+  }
+
+  /**
+   * Get weekly mission
+   */
+  @Get('/weekly-mission')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get weekly mission' })
+  async getWeeklyMission(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      const mission = await this.trainingService.getCurrentMission(session.sub);
+      return hasResponse(res, mission);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getWeeklyMission',
+        'Unable to retrieve weekly mission.',
+      );
+    }
+  }
+
+  /**
+   * Get weekly plan
+   */
+  @Get('/weekly-plan/:weekNumber')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get weekly plan' })
+  async getWeeklyPlan(
+    @Session() session: QuickAuthPayload,
+    @Param('weekNumber', ParseIntPipe) weekNumber: number,
+    @Res() res: Response,
+  ) {
+    try {
+      // TODO: Implement getWeeklyPlan method in TrainingService
+      const weekPlan = {
+        message: 'Get weekly plan - to be implemented',
+        weekNumber,
+      };
+      return hasResponse(res, weekPlan);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getWeeklyPlan',
+        'Unable to retrieve weekly plan.',
+      );
+    }
+  }
+
+  /**
+   * Get planned session details
+   */
+  @Get('/planned-session/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get planned session details' })
+  async getPlannedSession(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) sessionId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      // TODO: Implement getPlannedSession method in TrainingService
+      const sessionDetails = {
+        message: 'Get planned session - to be implemented',
+        sessionId,
+      };
+      return hasResponse(res, sessionDetails);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getPlannedSession',
+        'Unable to retrieve planned session.',
+      );
+    }
+  }
+
+  /**
+   * Get today's planned session and completion status
+   */
+  @Get('/runner-workflow/today')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({
+    summary: "Get today's planned session and completion status",
+  })
+  async getTodaysMission(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      const mission = await this.runnerWorkflowService.getTodaysMission(
+        session.sub,
+      );
+      return hasResponse(res, mission);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getTodaysMission',
+        "Unable to retrieve today's mission.",
+      );
+    }
+  }
+
+  /**
+   * Upload workout screenshots and process with AI
+   */
+  @Post('/runner-workflow/upload-run')
+  @UseGuards(AuthorizationGuard)
+  @UseInterceptors(
+    FilesInterceptor('screenshots', 4, {
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB per file
+        files: 4, // Max 4 files
+      },
+      fileFilter: (req, file, callback) => {
+        if (!file.mimetype.match(/^image\/(jpeg|jpg|png|webp)$/)) {
+          return callback(
+            new BadRequestException('Only image files are allowed'),
+            false,
+          );
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  @ApiOperation({ summary: 'Upload workout screenshots and process with AI' })
+  @ApiConsumes('multipart/form-data')
+  async uploadWorkoutScreenshots(
+    @Session() session: QuickAuthPayload,
+    @UploadedFiles() files: any[],
+    @Body() body: { plannedSessionId?: string; notes?: string },
+    @Res() res: Response,
+  ) {
+    try {
+      if (!files || files.length === 0) {
+        throw new BadRequestException('At least one screenshot is required');
+      }
+
+      const plannedSessionId = body.plannedSessionId
+        ? parseInt(body.plannedSessionId)
+        : undefined;
+
+      // Convert files to Buffer array for processing
+      const screenshots = files.map((file) => file.buffer);
+
+      const result = await this.runnerWorkflowService.processWorkoutSession({
+        userFid: session.sub,
+        plannedSessionId,
+        completedDate: new Date(),
+        notes: body.notes,
+        screenshots,
+      });
+
+      return hasResponse(res, result);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'uploadWorkoutScreenshots',
+        error.message || 'Failed to process screenshots.',
+      );
+    }
+  }
+
+  /**
+   * Mark planned session as completed or skipped
+   */
+  @Post('/runner-workflow/complete-session/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Mark planned session as completed or skipped' })
+  async markSessionCompleted(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) sessionId: number,
+    @Body() body: { didComplete: boolean },
+    @Res() res: Response,
+  ) {
+    try {
+      const result = await this.runnerWorkflowService.markSessionCompleted(
+        session.sub,
+        sessionId,
+        body.didComplete,
+      );
+      return hasResponse(res, result);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'markSessionCompleted',
+        error.message || 'Failed to mark session.',
+      );
+    }
+  }
+
+  /**
+   * Get user performance data and analytics
+   */
+  @Get('/runner-workflow/performance')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get user performance data and analytics' })
+  async getUserPerformance(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      const performance =
+        await this.runnerWorkflowService.getUserPerformanceData(session.sub);
+      return hasResponse(res, performance);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getUserPerformance',
+        'Unable to retrieve performance data.',
+      );
+    }
+  }
+
+  /**
+   * Verify and update extracted workout data
+   */
+  @Post('/runner-workflow/verify-run/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Verify and update extracted workout data' })
+  async verifyWorkoutData(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) completedRunId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const result = await this.runnerWorkflowService.verifyWorkoutData(
+        completedRunId,
+        session.sub,
+      );
+      return hasResponse(res, result);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'verifyWorkoutData',
+        error.message || 'Failed to verify workout data.',
+      );
+    }
+  }
+
+  /**
+   * Generate share image and post to Farcaster
+   */
+  @Post('/runner-workflow/share-run/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Generate share image and post to Farcaster' })
+  async shareWorkoutAchievement(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) completedRunId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const result = await this.runnerWorkflowService.shareWorkoutAchievement(
+        session.sub,
+        completedRunId,
+      );
+      return hasResponse(res, result);
+    } catch (error) {
+      return hasError(
+        res,
+        HttpStatus.BAD_REQUEST,
+        'shareWorkoutAchievement',
+        error.message || 'Failed to share workout.',
+      );
+    }
+  }
+
+  /**
+   * Get detailed run information by ID
+   */
+  @Get('/runner-workflow/runs/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get detailed run information by ID' })
+  async getRunDetail(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) runId: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const runDetail = await this.runnerWorkflowService.getRunDetail(
+        session.sub,
+        runId,
+      );
+      return hasResponse(res, runDetail);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getRunDetail',
+          'Run not found.',
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getRunDetail',
+        'Unable to retrieve run details.',
+      );
+    }
+  }
+}

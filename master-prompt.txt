@@ -1,0 +1,375 @@
+# RUNNER API - Farcaster Running Miniapp Backend - Master Context
+
+## Project Overview
+
+RUNNER is a Farcaster miniapp that transforms running into a social, gamified experience. Users can track workouts by uploading screenshots, earn $RUNNER tokens, maintain streaks, and share achievements with the Farcaster community. The core innovation is AI-powered screenshot processing that automatically extracts workout data from any running app.
+
+## Core Innovation: Screenshot-to-Data Pipeline
+
+### GPT-4 Vision Integration
+```typescript
+// Core workflow: User uploads screenshots → AI extracts data → Social sharing
+1. User takes screenshots from running apps (Strava, Nike Run Club, Garmin, etc.)
+2. GPT-4 Vision processes up to 4 screenshots simultaneously
+3. AI extracts: distance, time, pace, calories, heart rate, splits, weather, route
+4. System creates CompletedRun with confidence scoring
+5. User verifies data and shares achievements
+```
+
+### Screenshot Processing Flow
+```typescript
+// Upload & Processing Pipeline
+POST /workout-service/upload-run → 
+  → Store in DigitalOcean Spaces →
+  → GPT-4 Vision extraction →
+  → CompletedRun creation →
+  → UserStats update →
+  → Social sharing options
+```
+
+## Hierarchical Training System
+
+### Three-Level Architecture
+```typescript
+// Clean data hierarchy for AI coaching and user progress
+TrainingPlan (16-week Marathon cycle)
+  ├── WeeklyTrainingPlan (Week 1: Base building)
+  │   ├── PlannedSession (Monday: 5k easy run)
+  │   ├── PlannedSession (Wednesday: Speed intervals)
+  │   └── PlannedSession (Saturday: 10k long run)
+  └── CompletedRun (User's actual performance with screenshots)
+```
+
+### User Workflow
+```typescript
+// Simple user experience: "I DID IT" vs "I DID NOT DO IT"
+1. AI Coach assigns PlannedSession with specific targets
+2. User sees today's mission: "Run 5km at 6:00/km pace"
+3. User completes run and uploads screenshots
+4. AI extracts actual performance vs planned targets
+5. User marks session as completed or skipped
+6. System updates streaks, stats, and token rewards
+```
+
+## Database Models & Relationships
+
+### Core Training Hierarchy
+```typescript
+// TrainingPlan Entity - Long-term cycles
+- id, userId, goalType (marathon/5k/consistency), totalWeeks
+- currentWeek, status, targetDate, weeklyFrequency
+- aiGeneratedPlan: { planSummary, keyWorkouts, progressionStrategy }
+
+// WeeklyTrainingPlan Entity - Individual weeks
+- id, trainingPlanId, weekNumber, weekType (build/recovery/peak/taper)
+- weeklyGoalDistance, weeklyFocus, coachNotes
+- plannedSessionsCount, completedSessionsCount
+
+// PlannedSession Entity - Specific workouts
+- id, weeklyTrainingPlanId, sessionType (intervals/fixed_time/fixed_length)
+- scheduledDate, targetDistance, targetTime, targetPace
+- intervalStructure, instructions, priority (easy/key_workout)
+
+// CompletedRun Entity - Actual performance
+- id, userId, plannedSessionId (nullable for freestyle runs)
+- status (completed/skipped/partial), actualDistance, actualTime, actualPace
+- screenshotUrls[], extractedData, verified, performanceScore
+- shareImageUrl, shared, castHash (Farcaster integration)
+```
+
+### User & Analytics
+```typescript
+// User Entity - Core user data + quick stats
+- id, fid, username, pfpUrl, runnerTokens
+- totalRuns, totalDistance, currentStreak, longestStreak
+- hasActiveTrainingPlan, lastRunDate, preferences
+- Relationships: trainingPlans[], completedRuns[], detailedStats
+
+// UserStats Entity - Heavy analytics (1:1 with User)
+- Performance metrics: bestPace, longestRun, avgPace
+- Weekly/monthly aggregates: thisWeekDistance, thisMonthRuns
+- Training analytics: planCompletionRate, sessionTypes completed
+- Social metrics: workoutsShared, totalLikesReceived
+- App usage: screenshotsUploaded, avgExtractionConfidence
+```
+
+## External Integrations
+
+### Farcaster Platform Integration
+```typescript
+// Miniapp lifecycle
+sdk.quickAuth.getToken()   // Seamless authentication
+sdk.actions.composeCast() // Share workout achievements
+sdk.actions.addMiniApp()  // Enable notifications
+
+// Social sharing pipeline
+CompletedRun → Generate share image → Post to Farcaster → Track engagement
+```
+
+### AI & Storage Services
+```typescript
+// GPT-4 Vision for screenshot processing
+- Extracts workout data from any running app
+- Confidence scoring for data accuracy
+- Handles multiple image formats and layouts
+
+// DigitalOcean Spaces for image storage
+- Screenshot storage with CDN delivery
+- Generated share image hosting
+- Organized by user/session structure
+```
+
+## API Endpoints Structure
+
+### Core Workflow Endpoints
+```typescript
+// Today's Mission
+GET  /runner-workflow/today        // Get today's PlannedSession + completion status
+POST /runner-workflow/complete-session/:id // Mark as "I DID IT" or "I DID NOT DO IT"
+
+// Screenshot Upload & Processing
+POST /runner-workflow/upload-run   // Upload screenshots + optional plannedSessionId
+- Processes with GPT-4 Vision
+- Creates CompletedRun with extracted data
+- Updates user stats and streaks
+
+// Performance Analytics
+GET  /runner-workflow/performance  // Weekly progress, streaks, recent runs
+```
+
+### Training System
+```typescript
+// Training Service
+GET  /training-service/current-plan     // Active TrainingPlan with current week
+GET  /training-service/week/:number     // Specific WeeklyTrainingPlan
+POST /training-service/generate-plan    // AI generates new training cycle
+
+// Weekly Mission System
+GET  /training-service/this-week        // Current week's sessions and progress
+GET  /training-service/planned-session/:id // Detailed session instructions
+```
+
+### Social & Sharing
+```typescript
+// Social Service
+POST /social-service/generate-share-image // Create shareable workout image
+POST /social-service/share-to-farcaster   // Post to Farcaster with cast tracking
+GET  /social-service/community-feed       // Community workout shares
+```
+
+### User Management
+```typescript
+// User Service
+GET  /user-service/profile      // User data + quick stats
+GET  /user-service/stats        // Detailed analytics from UserStats
+GET  /user-service/leaderboard  // Community rankings
+PUT  /user-service/preferences  // Update training preferences
+```
+
+## Session Types & AI Coaching
+
+### Three Core Session Types
+```typescript
+// INTERVALS - Structured speed work
+{
+  sessionType: 'intervals',
+  intervalStructure: {
+    warmup: 10, // minutes
+    intervals: [
+      { distance: 400, pace: "4:30/km", rest: 90, repetitions: 8 }
+    ],
+    cooldown: 10
+  }
+}
+
+// FIXED_TIME - Time-based runs
+{
+  sessionType: 'fixed_time',
+  targetTime: 45, // minutes
+  targetPace: "5:30/km",
+  instructions: "Run for 45 minutes at steady, comfortable effort"
+}
+
+// FIXED_LENGTH - Distance-based runs
+{
+  sessionType: 'fixed_length',
+  targetDistance: 10, // km
+  targetPace: "5:00/km",
+  instructions: "Complete 10km at marathon pace"
+}
+```
+
+### AI Coach Logic
+```typescript
+// Personalized session generation based on:
+- User's fitness level and training history
+- Current week type (build/recovery/peak/taper)
+- Goal type (marathon/5k/consistency)
+- Recent performance vs targets
+- Training plan progression
+```
+
+## Frontend Integration
+
+### Main App Flow
+```typescript
+// HomePage with Smart Upload Button
+- Shows only if user hasn't completed today's run
+- Supports 1-4 screenshot uploads (JPEG/PNG/WebP, max 10MB each)
+- Real-time processing with progress indicators
+- Results display with confidence scoring
+
+// Today's Mission View
+- Shows current PlannedSession with targets
+- Big "I DID IT" / "I DID NOT DO IT" buttons
+- Links to screenshot upload for verification
+```
+
+### User Experience
+```typescript
+// Upload Flow
+1. User taps "📱 Upload Run Screenshots"
+2. Selects multiple images from running app
+3. System processes with GPT-4 Vision
+4. Shows extracted data with confidence score
+5. User verifies/adjusts data if needed
+6. Creates CompletedRun and updates streaks
+7. Option to share achievement on Farcaster
+
+// Performance Dashboard
+- Weekly progress vs planned sessions
+- Streak tracking with risk indicators
+- Personal bests and achievements
+- Community leaderboard integration
+```
+
+## Environment Configuration
+
+### Core Application
+```bash
+# Database
+DATABASE_NAME=runner_db
+DATABASE_HOST=localhost
+DATABASE_PORT=3306
+DATABASE_USER=root
+DATABASE_PASSWORD=password
+
+# AI & Storage
+OPENAI_API_KEY=your_openai_key           # GPT-4 Vision
+DO_SPACES_ACCESS_KEY=your_do_access_key  # DigitalOcean Spaces
+DO_SPACES_SECRET_KEY=your_do_secret_key
+DO_SPACES_ENDPOINT=nyc3.digitaloceanspaces.com
+DO_SPACES_BUCKET=runner-screenshots
+
+# Farcaster Integration
+NEYNAR_API_KEY=your_neynar_key
+COOKIE_SECRET=your_cookie_secret
+```
+
+### Training System Configuration
+```bash
+# AI Coach Settings
+DEFAULT_WEEKLY_FREQUENCY=3
+AI_COACH_ENABLED=true
+SESSION_GENERATION_MODEL=gpt-4
+
+# Performance Thresholds
+COMPLETION_TOLERANCE=0.9          # 90% of target counts as completion
+HIGH_CONFIDENCE_THRESHOLD=0.8     # Auto-verify if AI confidence > 80%
+STREAK_REWARD_THRESHOLD=3         # Token reward every 3-day streak
+TOKEN_REWARD_AMOUNT=100           # Tokens per milestone
+```
+
+## Business Logic Features
+
+### Token Economy & Gamification
+```typescript
+// Earning Mechanisms
+- Run completion: 10 tokens
+- Planned session completion: 25 tokens
+- 3-day streak: 100 bonus tokens
+- Weekly goal completion: 200 tokens
+- Personal best: 50 tokens
+- Social sharing: 15 tokens
+
+// Streak System
+- Daily streak: consecutive days with runs
+- Weekly streak: consecutive weeks hitting goal
+- Streak protection: grace period for missed days
+- Social motivation: streak sharing and competitions
+```
+
+### AI Performance Analysis
+```typescript
+// Automated insights from CompletedRun data
+- Performance trends and improvements
+- Pace analysis and pacing strategies
+- Training load management
+- Injury risk indicators
+- Goal achievement probability
+```
+
+### Social Features
+```typescript
+// Community Engagement
+- Rich workout share images with stats
+- Community challenges and competitions
+- Peer motivation and support
+- Achievement celebrations
+- Leaderboards with various categories
+```
+
+## Current Project Structure
+```
+src/
+├── core/
+│   ├── auth/              # Farcaster QuickAuth integration
+│   ├── user/              # User management & analytics
+│   ├── training/          # Training plans & AI coach
+│   ├── workout/           # Screenshot processing & run tracking
+│   ├── runner-workflow/   # Core workflow orchestration
+│   ├── social/            # Sharing & community features
+│   ├── notification/      # Smart notifications
+│   └── token/             # $RUNNER token economy
+├── models/
+│   ├── User/              # User entity with quick stats
+│   ├── UserStats/         # Heavy analytics (1:1 with User)
+│   ├── TrainingPlan/      # Long-term training cycles
+│   ├── WeeklyTrainingPlan/ # Week-specific plans
+│   ├── PlannedSession/    # Individual workout assignments
+│   ├── CompletedRun/      # Actual performance with screenshots
+│   └── ...existing models
+├── services/
+│   ├── screenshot-processor.service.ts  # GPT-4 Vision integration
+│   ├── digital-ocean-spaces.service.ts # Image storage
+│   ├── ai-coach.service.ts             # Training plan generation
+│   └── runner-workflow.service.ts      # Core business logic
+└── utils/
+    ├── gpt-vision/        # AI processing utilities
+    └── image-processing/  # Screenshot handling
+```
+
+## Key System Capabilities
+
+### Core Innovation
+- **Screenshot-to-data pipeline** with 80%+ accuracy across running apps
+- **AI coaching** with personalized training plan generation
+- **Hierarchical training system** supporting any fitness goal
+- **Social gamification** driving daily engagement
+- **Token economy** incentivizing consistent behavior
+
+### Technical Excellence
+- **Production-ready** with comprehensive error handling
+- **Scalable architecture** with clean separation of concerns
+- **Real-time processing** with progress indicators and confidence scoring
+- **Privacy-focused** with user data verification and control
+- **Farcaster-native** for seamless social integration
+
+### Business Impact
+- **Daily engagement** through screenshot uploads and missions
+- **Community building** via social sharing and challenges
+- **Behavior change** through streaks and token rewards
+- **Viral growth** through rich Farcaster content
+- **Data insights** for training optimization and health tracking
+
+This architecture transforms the simple act of running into an engaging, social, and rewarding experience while maintaining the core focus on helping users achieve their fitness goals through AI-powered coaching and community support.
