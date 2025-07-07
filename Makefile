@@ -69,7 +69,7 @@ db-status:
 # Seed the database with workout data
 db-seed:
 	@echo "Seeding database with workout data..."
-	@npx ts-node src/scripts/seed-database.ts
+	@npx ts-node src/core/training/services/seed-database.ts
 
 # Show available commands
 help:

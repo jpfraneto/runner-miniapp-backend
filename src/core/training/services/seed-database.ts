@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -113,9 +114,13 @@ export class DatabaseSeeder {
 
     const entities = [CompletedRun, FarcasterCast, User];
 
+    // Disable foreign key checks
+    await this.dataSource.query('SET FOREIGN_KEY_CHECKS = 0');
     for (const entity of entities) {
       await this.dataSource.getRepository(entity).clear();
     }
+    // Re-enable foreign key checks
+    await this.dataSource.query('SET FOREIGN_KEY_CHECKS = 1');
   }
 
   private async createUsers(): Promise<User[]> {
@@ -136,6 +141,12 @@ export class DatabaseSeeder {
 
     // Create user entities
     for (const [fid, userData] of uniqueUsers) {
+      // Only pass properties that exist on the User entity
+      const coachPersonalities = [
+        'motivational',
+        'supportive',
+        'strict',
+      ] as const;
       const user = userRepository.create({
         fid: userData.fid,
         username: userData.username,
@@ -156,16 +167,17 @@ export class DatabaseSeeder {
         unitPreference: Math.random() > 0.5 ? 'metric' : 'imperial',
         fitnessLevel: ['beginner', 'intermediate', 'advanced'][
           Math.floor(Math.random() * 3)
-        ],
+        ] as 'beginner' | 'intermediate' | 'advanced',
         preferredWeeklyFrequency: [2, 3, 4, 5][Math.floor(Math.random() * 4)],
         preferences: {
           reminderTime: ['06:00', '07:00', '18:00'][
             Math.floor(Math.random() * 3)
           ],
           timezone: 'UTC',
-          coachPersonality: ['motivational', 'supportive', 'strict'][
-            Math.floor(Math.random() * 3)
-          ],
+          coachPersonality:
+            coachPersonalities[
+              Math.floor(Math.random() * coachPersonalities.length)
+            ],
           shareByDefault: Math.random() > 0.3,
           privateProfile: Math.random() > 0.7,
         },
@@ -173,7 +185,7 @@ export class DatabaseSeeder {
       });
 
       const savedUser = await userRepository.save(user);
-      users.push(savedUser);
+      users.push(savedUser as User);
     }
 
     return users;
@@ -202,21 +214,21 @@ export class DatabaseSeeder {
       const workoutData = session.workoutData;
       const completedDate = new Date(session.timestamp);
 
-      // Create CompletedRun
+      // Create CompletedRun - ensure all numeric values are properly converted
       const completedRun = completedRunRepository.create({
         userId: user.id,
         status: RunStatusEnum.COMPLETED,
         completedDate,
-        actualDistance: workoutData.distance || 0,
-        actualTime: workoutData.duration || 0,
+        actualDistance: Number(workoutData.distance || 0),
+        actualTime: Number(workoutData.duration || 0),
         actualPace: workoutData.pace || null,
-        calories: workoutData.calories || 0,
-        elevationGain: workoutData.elevationGain || 0,
-        steps: Math.floor((workoutData.distance || 0) * 1000),
+        calories: Number(workoutData.calories || 0),
+        elevationGain: Number(workoutData.elevationGain || 0),
+        steps: Math.floor(Number(workoutData.distance || 0) * 1000),
         screenshotUrls: session.embeds.map((embed) => embed.url),
         extractedData: {
           runningApp: 'Strava',
-          confidence: workoutData.confidence,
+          confidence: Number(workoutData.confidence || 0),
           weather: {
             temperature: 15 + Math.random() * 20,
             conditions: ['sunny', 'cloudy', 'rainy'][
@@ -244,25 +256,25 @@ export class DatabaseSeeder {
 
       await completedRunRepository.save(completedRun);
 
-      // Create FarcasterCast
+      // Create FarcasterCast - ensure numeric values are properly converted
       const farcasterCast = farcasterCastRepository.create({
         userId: user.id,
         farcasterCastHash: session.castHash,
         imageUrl: session.embeds[0]?.url || '',
         caption: session.text,
-        likes: session.reactions.likes_count,
-        comments: session.replies.count,
-        shares: session.reactions.recasts_count,
+        likes: Number(session.reactions.likes_count || 0),
+        comments: Number(session.replies.count || 0),
+        shares: Number(session.reactions.recasts_count || 0),
       });
 
       await farcasterCastRepository.save(farcasterCast);
 
-      // Update user stats
+      // Update user stats - ensure all values are numbers
       user.totalRuns += 1;
-      user.totalDistance += workoutData.distance || 0;
-      user.totalTimeMinutes += workoutData.duration || 0;
+      user.totalDistance += Number(workoutData.distance || 0);
+      user.totalTimeMinutes += Number(workoutData.duration || 0);
       user.totalShares += 1;
-      user.totalLikes += session.reactions.likes_count;
+      user.totalLikes += Number(session.reactions.likes_count || 0);
       user.lastRunDate = completedDate;
       user.lastActiveAt = completedDate;
 
@@ -272,7 +284,7 @@ export class DatabaseSeeder {
 }
 
 // CLI execution
-if (require.main === module) {
+if (typeof require !== 'undefined' && require.main === module) {
   const seeder = new DatabaseSeeder();
   seeder
     .seed()

@@ -8,11 +8,13 @@ async function main() {
     const seeder = new DatabaseSeeder();
     await seeder.seed();
     console.log('✅ Database seeding completed successfully!');
-    process.exit(0);
+    return 0;
   } catch (error) {
     console.error('❌ Database seeding failed:', error);
-    process.exit(1);
+    return 1;
   }
 }
 
-main();
+main().then((exitCode) => {
+  process.exit(exitCode);
+});
