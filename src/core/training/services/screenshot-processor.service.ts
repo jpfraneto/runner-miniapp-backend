@@ -2,6 +2,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { PROMPT_TWO } from './prompts';
 
 export interface ExtractedWorkoutData {
   distance?: number; // in km
@@ -103,98 +104,12 @@ export class ScreenshotProcessorService {
     base64Images: string[],
   ): Promise<ExtractedWorkoutData> {
     console.log('🔍 Starting workout data extraction from images');
-    const systemPrompt = `You are an expert at analyzing running app screenshots and extracting workout data with high accuracy.
-
-CRITICAL: First, determine if the provided images are actually screenshots from running/fitness apps or contain workout data.
-
-If the images are NOT workout-related (e.g., random photos, food, selfies, landscapes, memes, etc.), return this exact JSON structure:
-{
-  "isWorkoutImage": false,
-  "confidence": 0,
-  "errorMessage": "not_workout_image"
-}
-
-If the images ARE from running apps or contain workout data, analyze them and extract all available information.
-
-IMPORTANT: You must return ONLY a valid JSON object with the following structure. Do not include any explanatory text before or after the JSON.
-
-For workout images, return:
-{
-  "isWorkoutImage": true,
-  "distance": number, // in km (convert from miles if needed)
-  "duration": number, // total time in minutes (convert from hours:minutes:seconds)
-  "pace": "string", // average pace like "5:30/km" or "8:30/mile"
-  "calories": number,
-  "elevationGain": number, // in meters (convert from feet if needed)
-  "avgHeartRate": number,
-  "maxHeartRate": number,
-  "steps": number,
-  "startTime": "ISO string", // if visible
-  "endTime": "ISO string", // if visible
-  "route": {
-    "name": "string", // route name if shown
-    "type": "string" // "outdoor", "treadmill", "track", etc.
-  },
-  "splits": [
-    {
-      "distance": number, // split distance in km
-      "time": "string", // split time like "5:30"
-      "pace": "string" // split pace like "5:30/km"
-    }
-  ],
-  "weather": {
-    "temperature": number, // in Celsius
-    "conditions": "string" // "sunny", "cloudy", "rainy", etc.
-  },
-  "runningApp": "string", // app name detected from UI
-  "confidence": number, // 0-1 confidence in extraction accuracy
-  "extractedText": ["string"] // raw text you can see for debugging
-}
-
-Workout Image Detection:
-Look for these indicators that it's a workout screenshot:
-- Running app UI elements (Nike Run Club, Strava, Garmin, Apple Fitness, etc.)
-- Workout metrics like distance, time, pace, calories
-- Map routes or GPS tracking
-- Heart rate data or graphs
-- Split times or lap information
-- Exercise summaries or achievements
-- Fitness app branding or logos
-
-Non-Workout Images (return isWorkoutImage: false):
-- Regular photos, selfies, landscapes
-- Food pictures, memes, screenshots of other apps
-- Text messages, social media posts
-- Random documents or screenshots
-- Anything without fitness/workout data
-
-Extraction Guidelines for Valid Workout Images:
-- Only include fields where you can clearly see the data
-- Be precise with numbers - don't guess or estimate
-- Convert all measurements to metric (km, meters, Celsius)
-- For duration, convert everything to total minutes (e.g., 1:23:45 = 83.75 minutes)
-- For pace, use format like "5:30/km" with appropriate unit
-- Set confidence based on image clarity and data visibility
-- Include all visible split data if available
-- Identify the running app from UI elements, logos, or design patterns
-- Extract route information if shown (route name, indoor/outdoor)
-- Look for weather data if displayed
-
-Common Running Apps to Identify:
-- Nike Run Club (orange/black theme, swoosh logo)
-- Strava (orange/white theme, Strava logo)
-- Garmin Connect (blue/white theme, Garmin branding)
-- Apple Fitness (colorful rings, Apple design)
-- Adidas Running (three stripes, Adidas branding)
-- MapMyRun (Under Armour branding)
-- Samsung Health (Samsung branding)
-
-Return the JSON object only.`;
+    const systemPrompt = PROMPT_TWO;
 
     try {
       console.log('🤖 Making API request to GPT-4 Vision');
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         max_tokens: 2000,
         messages: [
           {
@@ -484,7 +399,7 @@ Return the JSON object only.`;
       console.log('🏥 Running health check');
       // Test with a simple request
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         max_tokens: 10,
         messages: [
           {
@@ -504,7 +419,7 @@ Return the JSON object only.`;
       this.logger.error('Screenshot processor health check failed:', error);
       return {
         status: 'unhealthy',
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
       };
     }
   }
