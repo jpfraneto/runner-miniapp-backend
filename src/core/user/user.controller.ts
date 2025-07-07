@@ -195,4 +195,39 @@ export class UserController {
       );
     }
   }
+
+  /**
+   * Gets all users' workout history (public endpoint)
+   *
+   * @param {number} page - The page number for pagination
+   * @param {number} limit - The number of records per page
+   * @param {Response} res - The response object
+   * @returns {Promise<Response>} The response containing all users' workout history
+   */
+  @Get('/all-workouts')
+  async getAllUsersWorkouts(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 50,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const validatedPage = Math.max(1, Number(page) || 1);
+      const validatedLimit = Math.min(100, Math.max(10, Number(limit) || 50));
+
+      const workouts = await this.userService.getAllUsersWorkouts(
+        validatedPage,
+        validatedLimit,
+      );
+
+      return hasResponse(res, workouts);
+    } catch (error) {
+      console.error('❌ [UserController] Error getting all workouts:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getAllUsersWorkouts',
+        'Failed to retrieve workouts',
+      );
+    }
+  }
 }

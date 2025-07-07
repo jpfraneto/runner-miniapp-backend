@@ -270,11 +270,14 @@ export class DatabaseSeeder {
       await farcasterCastRepository.save(farcasterCast);
 
       // Update user stats - ensure all values are numbers
-      user.totalRuns += 1;
-      user.totalDistance += Number(workoutData.distance || 0);
-      user.totalTimeMinutes += Number(workoutData.duration || 0);
-      user.totalShares += 1;
-      user.totalLikes += Number(session.reactions.likes_count || 0);
+      user.totalRuns = Number(user.totalRuns) + 1;
+      user.totalDistance =
+        Number(user.totalDistance) + Number(workoutData.distance || 0);
+      user.totalTimeMinutes =
+        Number(user.totalTimeMinutes) + Number(workoutData.duration || 0);
+      user.totalShares = Number(user.totalShares) + 1;
+      user.totalLikes =
+        Number(user.totalLikes) + Number(session.reactions.likes_count || 0);
       user.lastRunDate = completedDate;
       user.lastActiveAt = completedDate;
 

@@ -1,20 +1,20 @@
 # Database configuration
-DB_HOST=127.0.0.1
-DB_USER=root
-DB_PORT=3307
-DB_PASSWORD=1234
-DB_NAME=runnercoin_db
-DB_SSL=false
+DATABASE_HOST=127.0.0.1
+DATABASE_USER=root
+DATABASE_PORT=3307  
+DATABASE_PASSWORD=1234
+DATABASE_NAME=runnercoin_db
+DATABASE_SSL=false
 
 # Database connection options (uncomment the one that works for you)
 # Option 1: Direct mysql command
-# MYSQL_CMD=mysql -h$(DB_HOST) -P$(DB_PORT) -u$(DB_USER) -p$(DB_PASSWORD)
+MYSQL_CMD=mysql -h$(DATABASE_HOST) -P$(DATABASE_PORT) -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
 
 # Option 2: Docker container (if running MySQL in Docker)
-MYSQL_CMD=docker exec -i runnercoin-mysql mysql -u$(DB_USER) -p$(DB_PASSWORD)
+# MYSQL_CMD=docker exec -i runnercoin_db mysql -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
 
 # Option 3: Using docker-compose
-# MYSQL_CMD=docker-compose exec mysql mysql -h$(DB_HOST) -P$(DB_PORT) -u$(DB_USER) -p$(DB_PASSWORD)
+MYSQL_CMD=docker-compose exec db mysql -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
 
 # Option 4: Using mycli (if installed)
 # MYSQL_CMD=mycli -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p $(DB_PASSWORD) --execute
@@ -46,25 +46,30 @@ check-mysql:
 .PHONY: db-reset db-drop db-create db-status help check-mysql
 
 # Reset database (drop and recreate)
-db-reset: db-drop db-create db-seed
-	@echo "Database '$(DB_NAME)' has been reset and seeded successfully!"
+db-reset: db-drop db-create db-sync db-seed
+	@echo "Database '$(DATABASE_NAME)' has been reset and seeded successfully!"
 
 # Drop the database
 db-drop:
-	@echo "Dropping database '$(DB_NAME)'..."
-	@$(MYSQL_CMD) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
+	@echo "Dropping database '$(DATABASE_NAME)'..."
+	@$(MYSQL_CMD) -e "DROP DATABASE IF EXISTS $(DATABASE_NAME);"
 	@echo "Database dropped."
 
 # Create the database
 db-create:
-	@echo "Creating database '$(DB_NAME)'..."
-	@$(MYSQL_CMD) -e "CREATE DATABASE $(DB_NAME);"
+	@echo "Creating database '$(DATABASE_NAME)'..."
+	@$(MYSQL_CMD) -e "CREATE DATABASE $(DATABASE_NAME);"
 	@echo "Database created."
 
 # Check database status
 db-status:
 	@echo "Checking database status..."
-	@$(MYSQL_CMD) -e "SHOW DATABASES LIKE '$(DB_NAME)';"
+	@$(MYSQL_CMD) -e "SHOW DATABASES LIKE '$(DATABASE_NAME)';"
+
+# Sync database schema (create tables)
+db-sync:
+	@echo "Syncing database schema..."
+	@npx ts-node src/scripts/sync-database.ts
 
 # Seed the database with workout data
 db-seed:

@@ -100,8 +100,8 @@ export class CompletedRun {
   @Column({ nullable: true })
   actualTime: number; // minutes
 
-  @Column({ nullable: true })
-  actualPace: string; // e.g., "5:30/km"
+  @Column({ type: 'json', nullable: true })
+  actualPace: any; // e.g., { average: "5:30/km", best: "4:42/km" } or string
 
   @Column({ nullable: true })
   calories: number;

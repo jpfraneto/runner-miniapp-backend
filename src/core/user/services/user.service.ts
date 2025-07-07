@@ -5,6 +5,10 @@ import { Repository } from 'typeorm';
 
 // Models
 import { User, UserRoleEnum } from '../../../models';
+import {
+  CompletedRun,
+  RunStatusEnum,
+} from '../../../models/CompletedRun/CompletedRun.model';
 import { logger } from 'src/main';
 
 /**
@@ -46,6 +50,8 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(CompletedRun)
+    private readonly completedRunRepository: Repository<CompletedRun>,
   ) {}
 
   /**
@@ -189,11 +195,40 @@ export class UserService {
    * Gets the user's workout history
    *
    * @param {User['id']} userId - The ID of the user
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Number of runs per page (default: 50)
    * @returns {Promise<any>} The user's workout history
    */
-  async getWorkoutHistory(userId: User['id']): Promise<any> {
-    // TODO: Implement workout history retrieval
-    return [];
+  async getWorkoutHistory(
+    userId: User['id'],
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<any> {
+    const skip = (page - 1) * limit;
+
+    const [runs, total] = await this.completedRunRepository.findAndCount({
+      where: {
+        userId,
+        status: RunStatusEnum.COMPLETED,
+      },
+      order: {
+        completedDate: 'DESC',
+      },
+      skip,
+      take: limit,
+      relations: ['plannedSession', 'trainingPlan'],
+    });
+
+    return {
+      runs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    };
   }
 
   /**
@@ -326,5 +361,42 @@ export class UserService {
   public invalidateLeaderboardCache(): void {
     this.leaderboardCache = null;
     console.log('🔄 [UserService] Leaderboard cache invalidated');
+  }
+
+  /**
+   * Gets all users' workout history (public endpoint)
+   *
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Number of runs per page (default: 50)
+   * @returns {Promise<any>} All users' workout history
+   */
+  async getAllUsersWorkouts(
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<any> {
+    const skip = (page - 1) * limit;
+
+    const [runs, total] = await this.completedRunRepository.findAndCount({
+      where: {
+        status: RunStatusEnum.COMPLETED,
+      },
+      order: {
+        completedDate: 'DESC',
+      },
+      skip,
+      take: limit,
+      relations: ['user', 'plannedSession', 'trainingPlan'],
+    });
+
+    return {
+      runs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    };
   }
 }
