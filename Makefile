@@ -46,8 +46,8 @@ check-mysql:
 .PHONY: db-reset db-drop db-create db-status help check-mysql
 
 # Reset database (drop and recreate)
-db-reset: db-drop db-create
-	@echo "Database '$(DB_NAME)' has been reset successfully!"
+db-reset: db-drop db-create db-seed
+	@echo "Database '$(DB_NAME)' has been reset and seeded successfully!"
 
 # Drop the database
 db-drop:
@@ -66,12 +66,18 @@ db-status:
 	@echo "Checking database status..."
 	@$(MYSQL_CMD) -e "SHOW DATABASES LIKE '$(DB_NAME)';"
 
+# Seed the database with workout data
+db-seed:
+	@echo "Seeding database with workout data..."
+	@npx ts-node src/scripts/seed-database.ts
+
 # Show available commands
 help:
 	@echo "Available commands:"
-	@echo "  make db-reset   - Drop and recreate the database"
+	@echo "  make db-reset   - Drop, recreate and seed the database"
 	@echo "  make db-drop    - Drop the database"
 	@echo "  make db-create  - Create the database"
+	@echo "  make db-seed    - Seed the database with workout data"
 	@echo "  make db-status  - Check if database exists"
 	@echo "  make help        - Show this help message"
 
