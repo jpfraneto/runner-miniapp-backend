@@ -102,13 +102,18 @@ export class WeeklyTrainingPlan {
   @Column({ type: 'text', nullable: true })
   coachNotes: string; // AI coach notes for this week
 
-  @Column({ type: 'json', nullable: true })
-  weeklyTargets: {
-    longRunDistance?: number;
-    totalVolume?: number;
-    keyWorkouts?: string[];
-    restDays?: number[]; // Which days of week are rest (0=Sunday, 1=Monday, etc.)
-  };
+  // Weekly targets fields (converted from JSON)
+  @Column({ nullable: true })
+  longRunDistance: number; // Long run distance in km
+
+  @Column({ nullable: true })
+  totalVolume: number; // Total weekly volume in km
+
+  @Column({ type: 'text', nullable: true })
+  keyWorkouts: string; // Comma-separated list of key workouts
+
+  @Column({ type: 'text', nullable: true })
+  restDays: string; // Comma-separated list of rest days (0=Sunday, 1=Monday, etc.)
 
   @CreateDateColumn()
   createdAt: Date;

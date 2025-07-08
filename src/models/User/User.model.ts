@@ -174,13 +174,18 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   banExpiresAt: Date; // When the ban expires (1 week from ban start)
 
-  @Column({ type: 'json', nullable: true })
-  banHistory: Array<{
-    bannedAt: string;
-    expiresAt: string;
-    reason: string;
-    invalidSubmissions: number;
-  }>;
+  // Ban history fields (converted from JSON)
+  @Column({ type: 'timestamp', nullable: true })
+  lastBanStart: Date; // When the last ban started
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastBanExpires: Date; // When the last ban expires
+
+  @Column({ nullable: true })
+  lastBanReason: string; // Reason for the last ban
+
+  @Column({ default: 0 })
+  totalBans: number; // Total number of bans
 
   // ================================
   // PREFERENCES
@@ -203,14 +208,25 @@ export class User {
   @Column({ default: 3 })
   preferredWeeklyFrequency: number;
 
-  @Column({ type: 'json', nullable: true })
-  preferences: {
-    reminderTime?: string;
-    timezone?: string;
-    coachPersonality?: 'motivational' | 'supportive' | 'strict';
-    shareByDefault?: boolean;
-    privateProfile?: boolean;
-  };
+  // User preferences fields (converted from JSON)
+  @Column({ nullable: true })
+  reminderTime: string; // e.g., "07:00"
+
+  @Column({ nullable: true })
+  timezone: string; // e.g., "America/New_York"
+
+  @Column({
+    type: 'enum',
+    enum: ['motivational', 'supportive', 'strict'],
+    default: 'motivational',
+  })
+  coachPersonality: 'motivational' | 'supportive' | 'strict';
+
+  @Column({ default: false })
+  shareByDefault: boolean; // Whether to share workouts by default
+
+  @Column({ default: false })
+  privateProfile: boolean; // Whether profile is private
 
   // ================================
   // TIMESTAMPS

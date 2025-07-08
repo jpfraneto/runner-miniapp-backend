@@ -211,14 +211,33 @@ export class UserController {
     @Res() res: Response,
   ): Promise<Response> {
     try {
+      console.log(
+        '📄 [UserController] Getting all workouts - Page:',
+        page,
+        'Limit:',
+        limit,
+      );
+
       const validatedPage = Math.max(1, Number(page) || 1);
       const validatedLimit = Math.min(100, Math.max(10, Number(limit) || 50));
+
+      console.log(
+        '✨ [UserController] Validated params - Page:',
+        validatedPage,
+        'Limit:',
+        validatedLimit,
+      );
 
       const workouts = await this.userService.getAllUsersWorkouts(
         validatedPage,
         validatedLimit,
       );
 
+      console.log(
+        '✅ [UserController] Successfully retrieved',
+        workouts.length,
+        'workouts',
+      );
       return hasResponse(res, workouts);
     } catch (error) {
       console.error('❌ [UserController] Error getting all workouts:', error);

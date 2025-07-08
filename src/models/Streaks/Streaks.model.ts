@@ -45,8 +45,8 @@ export class Achievement {
   @Column({ nullable: true })
   claimTransactionHash: string;
 
-  @Column({ type: 'json', nullable: true })
-  metadata: any; // Flexible data for different achievement types
+  @Column({ type: 'text', nullable: true })
+  metadata: string; // JSON string for flexible data (rarely used)
 
   @CreateDateColumn()
   earnedAt: Date;

@@ -115,18 +115,15 @@ export class PlannedSession {
   @Column({ nullable: true })
   targetPace: string; // e.g., "5:30/km" (for all types)
 
-  @Column({ type: 'json', nullable: true })
-  intervalStructure: {
-    warmup?: number; // minutes
-    intervals?: Array<{
-      distance?: number; // meters
-      time?: number; // seconds
-      pace?: string;
-      rest?: number; // seconds
-      repetitions?: number;
-    }>;
-    cooldown?: number; // minutes
-  };
+  // Interval structure fields (converted from JSON)
+  @Column({ nullable: true })
+  warmupMinutes: number; // Warmup duration in minutes
+
+  @Column({ nullable: true })
+  cooldownMinutes: number; // Cooldown duration in minutes
+
+  @Column({ type: 'text', nullable: true })
+  intervalStructure: string; // JSON string for complex interval data (rarely used)
 
   @Column({ type: 'text', nullable: true })
   instructions: string; // AI coach instructions

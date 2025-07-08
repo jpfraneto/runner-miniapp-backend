@@ -100,8 +100,11 @@ export class CompletedRun {
   @Column({ nullable: true })
   actualTime: number; // minutes
 
-  @Column({ type: 'json', nullable: true })
-  actualPace: any; // e.g., { average: "5:30/km", best: "4:42/km" } or string
+  @Column({ nullable: true })
+  avgPace: string; // e.g., "5:30/km"
+
+  @Column({ nullable: true })
+  bestPace: string; // e.g., "4:42/km"
 
   @Column({ nullable: true })
   calories: number;
@@ -123,28 +126,42 @@ export class CompletedRun {
   // GPT-4 Vision extracts this data
   // ================================
 
-  @Column({ type: 'json', nullable: true })
-  screenshotUrls: string[]; // DigitalOcean Spaces URLs (up to 4 images)
+  @Column({ nullable: true })
+  screenshotUrl1: string; // DigitalOcean Spaces URL for first screenshot
 
-  @Column({ type: 'json', nullable: true })
-  extractedData: {
-    runningApp?: string; // "Strava", "Nike Run Club", "Garmin Connect", etc.
-    confidence?: number; // AI extraction confidence (0-1)
-    weather?: {
-      temperature?: number;
-      conditions?: string; // "sunny", "rainy", "cloudy"
-    };
-    route?: {
-      name?: string; // "Morning Loop", "Central Park"
-      type?: string; // "outdoor", "treadmill", "track"
-    };
-    splits?: Array<{
-      distance: number; // km or mile marker
-      time: string; // split time
-      pace: string; // split pace
-    }>;
-    rawText?: string[]; // OCR text for debugging
-  };
+  @Column({ nullable: true })
+  screenshotUrl2: string; // DigitalOcean Spaces URL for second screenshot
+
+  @Column({ nullable: true })
+  screenshotUrl3: string; // DigitalOcean Spaces URL for third screenshot
+
+  @Column({ nullable: true })
+  screenshotUrl4: string; // DigitalOcean Spaces URL for fourth screenshot
+
+  // Extracted data fields (converted from JSON)
+  @Column({ nullable: true })
+  runningApp: string; // "Strava", "Nike Run Club", "Garmin Connect", etc.
+
+  @Column({ type: 'decimal', precision: 3, scale: 2, nullable: true })
+  extractionConfidence: number; // AI extraction confidence (0-1)
+
+  @Column({ nullable: true })
+  weatherTemperature: number; // Temperature in Celsius
+
+  @Column({ nullable: true })
+  weatherConditions: string; // "sunny", "rainy", "cloudy"
+
+  @Column({ nullable: true })
+  routeName: string; // "Morning Loop", "Central Park"
+
+  @Column({ nullable: true })
+  routeType: string; // "outdoor", "treadmill", "track"
+
+  @Column({ type: 'text', nullable: true })
+  splitsData: string; // JSON string of splits data (for complex data that's rarely used)
+
+  @Column({ type: 'text', nullable: true })
+  rawText: string; // OCR text for debugging (comma-separated)
 
   @Column({ default: false })
   verified: boolean; // User verified the extracted data

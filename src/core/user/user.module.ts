@@ -1,7 +1,6 @@
 // Dependencies
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from '../auth/auth.module';
 
 // Controllers
 import { UserController } from './user.controller';
@@ -13,8 +12,14 @@ import { UserService } from './services';
 import { User } from '../../models';
 import { CompletedRun } from '../../models/CompletedRun/CompletedRun.model';
 
+// Modules
+import { AuthModule } from '../auth/auth.module';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([User, CompletedRun]), AuthModule],
+  imports: [
+    TypeOrmModule.forFeature([User, CompletedRun]),
+    forwardRef(() => AuthModule),
+  ],
   controllers: [UserController],
   providers: [UserService],
   exports: [UserService],

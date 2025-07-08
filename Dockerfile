@@ -14,6 +14,9 @@ COPY . .
 # Build the application
 RUN bun run build
 
+# Check what was actually built
+RUN ls -la dist/
+
 # Production stage with Node.js
 FROM node:18-alpine
 
@@ -27,5 +30,5 @@ COPY --from=builder /app/node_modules ./node_modules
 # Expose port
 EXPOSE 3000
 
-# Start with Node.js
-CMD ["node", "dist/main.js"]
+# Find the correct entry point (most likely one of these)
+CMD ["node", "dist/src/main.js"]

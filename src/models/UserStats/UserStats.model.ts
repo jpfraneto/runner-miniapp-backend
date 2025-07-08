@@ -175,12 +175,8 @@ export class UserStats {
   // Running consistency tracking
   // ================================
 
-  @Column({ type: 'json', nullable: true })
-  streakHistory: Array<{
-    startDate: string;
-    endDate: string;
-    length: number;
-  }>;
+  @Column({ type: 'text', nullable: true })
+  streakHistory: string; // JSON string for streak history (rarely used)
 
   @Column({ default: 0 })
   totalStreaksStarted: number;
@@ -228,14 +224,36 @@ export class UserStats {
   @Column({ default: 0 })
   milestonesReached: number;
 
-  @Column({ type: 'json', nullable: true })
-  personalRecords: {
-    fastest5k?: { time: number; date: string };
-    fastest10k?: { time: number; date: string };
-    fastestHalfMarathon?: { time: number; date: string };
-    fastestMarathon?: { time: number; date: string };
-    longestRun?: { distance: number; date: string };
-  };
+  // Personal records fields (converted from JSON)
+  @Column({ nullable: true })
+  fastest5kTime: number; // Fastest 5k time in minutes
+
+  @Column({ type: 'date', nullable: true })
+  fastest5kDate: Date; // Date of fastest 5k
+
+  @Column({ nullable: true })
+  fastest10kTime: number; // Fastest 10k time in minutes
+
+  @Column({ type: 'date', nullable: true })
+  fastest10kDate: Date; // Date of fastest 10k
+
+  @Column({ nullable: true })
+  fastestHalfMarathonTime: number; // Fastest half marathon time in minutes
+
+  @Column({ type: 'date', nullable: true })
+  fastestHalfMarathonDate: Date; // Date of fastest half marathon
+
+  @Column({ nullable: true })
+  fastestMarathonTime: number; // Fastest marathon time in minutes
+
+  @Column({ type: 'date', nullable: true })
+  fastestMarathonDate: Date; // Date of fastest marathon
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  longestRunDistance: number; // Longest run distance in km
+
+  @Column({ type: 'date', nullable: true })
+  longestRunDate: Date; // Date of longest run
 
   // ================================
   // APP USAGE ANALYTICS
@@ -265,12 +283,8 @@ export class UserStats {
   // Which external apps they use
   // ================================
 
-  @Column({ type: 'json', nullable: true })
-  runningAppsUsed: Array<{
-    app: string; // "Strava", "Nike Run Club", etc.
-    count: number;
-    lastUsed: string;
-  }>;
+  @Column({ type: 'text', nullable: true })
+  runningAppsUsed: string; // JSON string for running apps used (rarely used)
 
   @Column({ nullable: true })
   mostUsedRunningApp: string;

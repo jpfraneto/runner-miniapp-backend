@@ -1,5 +1,5 @@
 // Dependencies
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Controllers
@@ -7,16 +7,22 @@ import { AuthController } from './auth.controller';
 
 // Services
 import { AuthService } from './services';
-import { UserService } from '../user/services';
 
 // Models
 import { User } from '../../models';
+import { CompletedRun } from '../../models/CompletedRun/CompletedRun.model';
 import { AdminGuard } from 'src/security/guards';
 
+// Modules
+import { UserModule } from '../user/user.module';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [
+    TypeOrmModule.forFeature([User, CompletedRun]),
+    forwardRef(() => UserModule),
+  ],
   controllers: [AuthController],
-  providers: [AuthService, UserService, AdminGuard],
+  providers: [AuthService, AdminGuard],
   exports: [AuthService, AdminGuard],
 })
 export class AuthModule {}

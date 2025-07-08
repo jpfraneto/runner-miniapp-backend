@@ -20,8 +20,8 @@ export class CoachInteraction {
   @Column()
   message: string;
 
-  @Column({ type: 'json', nullable: true })
-  context: any; // Workout data, user state, etc.
+  @Column({ type: 'text', nullable: true })
+  context: string; // JSON string for workout data, user state, etc. (rarely used)
 
   @Column({ default: false })
   sentAsCast: boolean; // Whether sent as Farcaster comment/DM

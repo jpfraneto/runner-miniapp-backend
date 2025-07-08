@@ -141,12 +141,12 @@ export class DatabaseSeeder {
 
     // Create user entities
     for (const [fid, userData] of uniqueUsers) {
-      // Only pass properties that exist on the User entity
       const coachPersonalities = [
         'motivational',
         'supportive',
         'strict',
       ] as const;
+
       const user = userRepository.create({
         fid: userData.fid,
         username: userData.username,
@@ -169,23 +169,21 @@ export class DatabaseSeeder {
           Math.floor(Math.random() * 3)
         ] as 'beginner' | 'intermediate' | 'advanced',
         preferredWeeklyFrequency: [2, 3, 4, 5][Math.floor(Math.random() * 4)],
-        preferences: {
-          reminderTime: ['06:00', '07:00', '18:00'][
-            Math.floor(Math.random() * 3)
+        reminderTime: ['06:00', '07:00', '18:00'][
+          Math.floor(Math.random() * 3)
+        ],
+        timezone: 'UTC',
+        coachPersonality:
+          coachPersonalities[
+            Math.floor(Math.random() * coachPersonalities.length)
           ],
-          timezone: 'UTC',
-          coachPersonality:
-            coachPersonalities[
-              Math.floor(Math.random() * coachPersonalities.length)
-            ],
-          shareByDefault: Math.random() > 0.3,
-          privateProfile: Math.random() > 0.7,
-        },
+        shareByDefault: Math.random() > 0.3,
+        privateProfile: Math.random() > 0.7,
         lastActiveAt: new Date(),
       });
 
       const savedUser = await userRepository.save(user);
-      users.push(savedUser as User);
+      users.push(savedUser);
     }
 
     return users;
@@ -221,26 +219,23 @@ export class DatabaseSeeder {
         completedDate,
         actualDistance: Number(workoutData.distance || 0),
         actualTime: Number(workoutData.duration || 0),
-        actualPace: workoutData.pace || null,
+        avgPace: typeof workoutData.pace === 'string' ? workoutData.pace : null,
         calories: Number(workoutData.calories || 0),
         elevationGain: Number(workoutData.elevationGain || 0),
         steps: Math.floor(Number(workoutData.distance || 0) * 1000),
-        screenshotUrls: session.embeds.map((embed) => embed.url),
-        extractedData: {
-          runningApp: 'Strava',
-          confidence: Number(workoutData.confidence || 0),
-          weather: {
-            temperature: 15 + Math.random() * 20,
-            conditions: ['sunny', 'cloudy', 'rainy'][
-              Math.floor(Math.random() * 3)
-            ],
-          },
-          route: {
-            name: 'Morning Run',
-            type: 'outdoor',
-          },
-          rawText: workoutData.extractedText || [],
-        },
+        screenshotUrl1: session.embeds[0]?.url || null,
+        screenshotUrl2: session.embeds[1]?.url || null,
+        screenshotUrl3: session.embeds[2]?.url || null,
+        screenshotUrl4: session.embeds[3]?.url || null,
+        runningApp: 'Strava',
+        extractionConfidence: Number(workoutData.confidence || 0),
+        weatherTemperature: 15 + Math.random() * 20,
+        weatherConditions: ['sunny', 'cloudy', 'rainy'][
+          Math.floor(Math.random() * 3)
+        ],
+        routeName: 'Morning Run',
+        routeType: 'outdoor',
+        rawText: (workoutData.extractedText || []).join(', '),
         verified: true,
         verifiedAt: new Date(),
         isValidWorkout: true,

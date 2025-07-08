@@ -106,14 +106,21 @@ export class TrainingPlan {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @Column({ type: 'json', nullable: true })
-  aiGeneratedPlan: {
-    planSummary?: string;
-    keyWorkouts?: string[];
-    progressionStrategy?: string;
-    peakWeek?: number;
-    taperWeeks?: number[];
-  };
+  // AI generated plan fields (converted from JSON)
+  @Column({ type: 'text', nullable: true })
+  planSummary: string; // AI-generated plan summary
+
+  @Column({ type: 'text', nullable: true })
+  keyWorkouts: string; // Comma-separated list of key workouts
+
+  @Column({ type: 'text', nullable: true })
+  progressionStrategy: string; // AI-generated progression strategy
+
+  @Column({ nullable: true })
+  peakWeek: number; // Which week is the peak week
+
+  @Column({ type: 'text', nullable: true })
+  taperWeeks: string; // Comma-separated list of taper week numbers
 
   @CreateDateColumn()
   createdAt: Date;

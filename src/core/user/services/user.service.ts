@@ -374,29 +374,116 @@ export class UserService {
     page: number = 1,
     limit: number = 50,
   ): Promise<any> {
+    console.log(
+      '📄 [UserService] Getting all workouts - Page:',
+      page,
+      'Limit:',
+      limit,
+    );
+
     const skip = (page - 1) * limit;
 
-    const [runs, total] = await this.completedRunRepository.findAndCount({
-      where: {
-        status: RunStatusEnum.COMPLETED,
-      },
-      order: {
-        completedDate: 'DESC',
-      },
-      skip,
-      take: limit,
-      relations: ['user', 'plannedSession', 'trainingPlan'],
-    });
+    console.log('🔍 [UserService] Fetching workouts with skip:', skip);
 
-    return {
-      runs,
-      pagination: {
-        page,
+    try {
+      console.log('🔍 [UserService] Executing raw SQL query...');
+
+      // Use raw SQL query to avoid TypeORM JSON parsing issues
+      const query = `
+        SELECT 
+          cr.id,
+          cr.userId,
+          cr.trainingPlanId,
+          cr.weeklyTrainingPlanId,
+          cr.plannedSessionId,
+          cr.status,
+          cr.completedDate,
+          cr.actualDistance,
+          cr.actualTime,
+          cr.calories,
+          cr.avgHeartRate,
+          cr.maxHeartRate,
+          cr.elevationGain,
+          cr.steps,
+          cr.verified,
+          cr.verifiedAt,
+          cr.isValidWorkout,
+          cr.validationNotes,
+          cr.notes,
+          cr.shareImageUrl,
+          cr.shared,
+          cr.castHash,
+          cr.sharedAt,
+          cr.performanceScore,
+          cr.exceededTargets,
+          cr.isPersonalBest,
+          cr.personalBestType,
+          cr.createdAt,
+          cr.updatedAt,
+          cr.extractedAt,
+          u.id as user_id,
+          u.fid as user_fid,
+          u.username as user_username,
+          u.pfpUrl as user_pfpUrl,
+          u.role as user_role,
+          u.runnerTokens as user_runnerTokens,
+          u.totalRuns as user_totalRuns,
+          u.totalDistance as user_totalDistance,
+          u.totalTimeMinutes as user_totalTimeMinutes,
+          u.currentStreak as user_currentStreak,
+          u.longestStreak as user_longestStreak,
+          u.createdAt as user_createdAt
+        FROM completed_runs cr
+        LEFT JOIN users u ON cr.userId = u.id
+        WHERE cr.status = 'completed'
+        ORDER BY cr.completedDate DESC
+        LIMIT ? OFFSET ?
+      `;
+
+      const countQuery = `
+        SELECT COUNT(*) as total
+        FROM completed_runs cr
+        WHERE cr.status = 'completed'
+      `;
+
+      console.log('🔍 [UserService] Running count query...');
+      const totalResult = await this.completedRunRepository.query(countQuery);
+      const total = totalResult[0].total;
+      console.log('📊 [UserService] Total workouts found:', total);
+
+      console.log(
+        '🔍 [UserService] Running main query with limit:',
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasMore: page * limit < total,
-      },
-    };
+        'skip:',
+        skip,
+      );
+      const runs = await this.completedRunRepository.query(query, [
+        limit,
+        skip,
+      ]);
+      console.log(
+        '📊 [UserService] Query executed successfully, got',
+        runs.length,
+        'results',
+      );
+
+      console.log(
+        `✅ [UserService] Found ${runs.length} workouts out of ${total} total`,
+      );
+
+      return {
+        runs,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasMore: page * limit < total,
+        },
+      };
+    } catch (error) {
+      console.error('❌ [UserService] Error fetching workouts:', error);
+      throw new Error('Failed to retrieve workouts due to database issues');
+    }
   }
 }

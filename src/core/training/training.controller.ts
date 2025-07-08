@@ -247,11 +247,22 @@ export class TrainingController {
     @Res() res: Response,
   ) {
     try {
+      console.log(
+        "🏃 [TrainingController] Getting today's mission for user:",
+        session.sub,
+      );
       const mission = await this.runnerWorkflowService.getTodaysMission(
         session.sub,
       );
+      console.log(
+        "✅ [TrainingController] Successfully retrieved today's mission",
+      );
       return hasResponse(res, mission);
     } catch (error) {
+      console.error(
+        "❌ [TrainingController] Failed to get today's mission:",
+        error,
+      );
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,

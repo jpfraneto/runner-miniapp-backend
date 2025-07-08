@@ -249,7 +249,6 @@ export class AdminService {
       isBanned: false,
       bannedAt: null,
       banExpiresAt: null,
-      banHistory: [],
     });
   }
 
