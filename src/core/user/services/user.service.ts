@@ -182,7 +182,7 @@ export class UserService {
   async getWorkoutHistory(
     fid: number,
     page: number = 1,
-    limit: number = 30,
+    limit: number = 50,
   ): Promise<{
     workouts: RunningSession[];
     pagination: {

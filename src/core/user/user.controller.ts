@@ -61,7 +61,7 @@ export class UserController {
       const recentSessions = await this.userService.getWorkoutHistory(
         fid,
         1,
-        10,
+        50,
       );
 
       const userWithSessions = {

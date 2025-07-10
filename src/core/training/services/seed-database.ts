@@ -16,14 +16,6 @@ const toNumber = (value: unknown, fallback: number | null = 0) => {
 };
 
 interface WorkoutSeedData {
-  summary: {
-    totalProcessedSessions: number;
-    totalWorkoutSessions: number;
-    uniqueUsersWithWorkouts: number;
-    workoutDetectionRate: number;
-    totalDistance: number;
-    totalDuration: number;
-  };
   processedSessions: Array<{
     castHash: string;
     timestamp: string;
@@ -76,9 +68,6 @@ export class DatabaseSeeder {
       const rawData = fs.readFileSync(seedFilePath, 'utf8');
       this.seedData = JSON.parse(rawData);
       console.log('✅ Seed data loaded successfully');
-      console.log(
-        `📊 Found ${this.seedData.summary.uniqueUsersWithWorkouts} users with ${this.seedData.summary.totalWorkoutSessions} workouts`,
-      );
     } catch (error) {
       console.error('❌ Error loading seed data:', error);
       throw error;
