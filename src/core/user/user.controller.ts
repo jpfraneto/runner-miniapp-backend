@@ -11,8 +11,9 @@ import {
   Query,
   Res,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 
 // Services
@@ -38,20 +39,46 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   /**
-   * Retrieves a user by their ID.
+   * Retrieves a user by their FID with their last 10 training sessions.
    *
-   * @param {User['id']} id - The ID of the user to retrieve.
-   * @returns {Promise<User>} The user with the specified ID.
+   * @param {User['fid']} fid - The Farcaster ID of the user to retrieve.
+   * @returns {Promise<User>} The user with the specified FID and recent sessions.
    */
-  @Get('/user/:id')
-  getUserById(@Param('id') id: User['id']) {
-    return this.userService.getById(id, [
-      'id',
-      'username',
-      'pfpUrl',
-      'runnerTokens',
-      'createdAt',
-    ]);
+  @Get('/user/:fid')
+  async getUserById(@Param('fid') fid: User['fid'], @Res() res: Response) {
+    try {
+      const user = await this.userService.getByFid(fid);
+      if (!user) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getUserById',
+          'User not found',
+        );
+      }
+
+      // Get user's last 10 training sessions
+      const recentSessions = await this.userService.getWorkoutHistory(
+        fid,
+        1,
+        10,
+      );
+
+      const userWithSessions = {
+        user,
+        data: recentSessions,
+      };
+
+      return hasResponse(res, userWithSessions);
+    } catch (error) {
+      console.error('❌ [UserController] Error getting user by FID:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getUserById',
+        'Failed to retrieve user information',
+      );
+    }
   }
 
   /**
@@ -81,9 +108,11 @@ export class UserController {
   }
 
   /**
-   * Gets the user's workout history
+   * Gets the user's workout history with pagination
    *
    * @param {QuickAuthPayload} session - The authenticated user session from JWT
+   * @param {string} page - The page number for pagination
+   * @param {string} limit - The number of records per page
    * @param {Response} res - The response object
    * @returns {Promise<Response>} The response containing the user's workout history
    */
@@ -91,6 +120,8 @@ export class UserController {
   @UseGuards(AuthorizationGuard)
   async getWorkoutHistory(
     @Session() session: QuickAuthPayload,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '30',
     @Res() res: Response,
   ) {
     try {
@@ -104,9 +135,31 @@ export class UserController {
         );
       }
 
-      const workouts = await this.userService.getWorkoutHistory(user.id);
+      const pageNumber = parseInt(page, 10);
+      const limitNumber = parseInt(limit, 10);
+
+      // Validate pagination parameters
+      if (pageNumber < 1 || limitNumber < 1 || limitNumber > 100) {
+        throw new BadRequestException(
+          'Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 100.',
+        );
+      }
+
+      const workouts = await this.userService.getWorkoutHistory(
+        user.fid,
+        pageNumber,
+        limitNumber,
+      );
       return hasResponse(res, workouts);
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'getWorkoutHistory',
+          error.message,
+        );
+      }
       console.error(
         '❌ [UserController] Error getting workout history:',
         error,
@@ -144,7 +197,7 @@ export class UserController {
         );
       }
 
-      const stats = await this.userService.getFitnessStats(user.id);
+      const stats = await this.userService.getFitnessStats(user.fid);
       return hasResponse(res, stats);
     } catch (error) {
       console.error('❌ [UserController] Error getting fitness stats:', error);
@@ -197,6 +250,53 @@ export class UserController {
   }
 
   /**
+   * Gets a user's profile including stats and recent workouts
+   *
+   * @param {string} fid - The Farcaster user ID (fid)
+   * @param {Response} res - The response object
+   * @returns {Promise<Response>} The response containing the user's profile
+   */
+  @Get('/:fid')
+  @ApiOperation({
+    summary: 'Get user profile with stats and recent workouts',
+    description:
+      'Retrieves a user profile including stats and recent workouts (max 16)',
+  })
+  async getUserProfile(@Param('fid') fid: string, @Res() res: Response) {
+    try {
+      const userFid = parseInt(fid, 10);
+      if (isNaN(userFid)) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'getUserProfile',
+          'Invalid user ID format',
+        );
+      }
+
+      const profile = await this.userService.getUserProfile(userFid);
+      if (!profile) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getUserProfile',
+          'User not found',
+        );
+      }
+
+      return hasResponse(res, profile);
+    } catch (error) {
+      console.error('❌ [UserController] Error getting user profile:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getUserProfile',
+        'Failed to retrieve user profile',
+      );
+    }
+  }
+
+  /**
    * Gets all users' workout history (public endpoint)
    *
    * @param {number} page - The page number for pagination
@@ -206,8 +306,8 @@ export class UserController {
    */
   @Get('/all-workouts')
   async getAllUsersWorkouts(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 50,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '50',
     @Res() res: Response,
   ): Promise<Response> {
     try {
@@ -218,28 +318,43 @@ export class UserController {
         limit,
       );
 
-      const validatedPage = Math.max(1, Number(page) || 1);
-      const validatedLimit = Math.min(100, Math.max(10, Number(limit) || 50));
+      const pageNumber = parseInt(page, 10);
+      const limitNumber = parseInt(limit, 10);
+
+      // Validate pagination parameters
+      if (pageNumber < 1 || limitNumber < 1 || limitNumber > 100) {
+        throw new BadRequestException(
+          'Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 100.',
+        );
+      }
 
       console.log(
         '✨ [UserController] Validated params - Page:',
-        validatedPage,
+        pageNumber,
         'Limit:',
-        validatedLimit,
+        limitNumber,
       );
 
       const workouts = await this.userService.getAllUsersWorkouts(
-        validatedPage,
-        validatedLimit,
+        pageNumber,
+        limitNumber,
       );
 
       console.log(
         '✅ [UserController] Successfully retrieved',
-        workouts.length,
+        workouts.workouts.length,
         'workouts',
       );
       return hasResponse(res, workouts);
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'getAllUsersWorkouts',
+          error.message,
+        );
+      }
       console.error('❌ [UserController] Error getting all workouts:', error);
       return hasError(
         res,

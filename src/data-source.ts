@@ -4,7 +4,8 @@ import { getConfig } from './security/config';
 // Import all entities
 import {
   User,
-  CompletedRun,
+  RunningSession,
+  RunningInterval,
   PlannedSession,
   UserStats,
   TrainingPlan,
@@ -25,7 +26,8 @@ export const AppDataSource = new DataSource({
   database: getConfig().db.name,
   entities: [
     User,
-    CompletedRun,
+    RunningSession,
+    RunningInterval,
     PlannedSession,
     UserStats,
     TrainingPlan,

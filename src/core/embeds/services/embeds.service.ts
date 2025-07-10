@@ -22,16 +22,16 @@ export class EmbedsService {
    * Generate dynamic embed HTML for running achievement sharing
    */
   async generateAchievementEmbed(
-    userId: number,
+    fid: number,
     achievementType: string,
   ): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found: ${userId}`);
+        this.logger.warn(`User not found: ${fid}`);
         return null;
       }
 
@@ -45,7 +45,7 @@ export class EmbedsService {
       return this.generateEmbedHtml(embedData, 'achievement');
     } catch (error) {
       this.logger.error(
-        `Error generating achievement embed for ${userId}:`,
+        `Error generating achievement embed for ${fid}:`,
         error,
       );
       return null;
@@ -56,23 +56,23 @@ export class EmbedsService {
    * Generate HTML that renders as an image for running achievement
    */
   async generateAchievementImageHtml(
-    userId: number,
+    fid: number,
     achievementType: string,
   ): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found for image: ${userId}`);
+        this.logger.warn(`User not found for image: ${fid}`);
         return null;
       }
 
       return this.generateAchievementImageTemplate(user, achievementType);
     } catch (error) {
       this.logger.error(
-        `Error generating achievement image HTML for ${userId}:`,
+        `Error generating achievement image HTML for ${fid}:`,
         error,
       );
       return null;
@@ -82,19 +82,19 @@ export class EmbedsService {
   /**
    * Generate leaderboard embed with proper image URL
    */
-  async generateLeaderboardEmbed(userId: number): Promise<string | null> {
+  async generateLeaderboardEmbed(fid: number): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found: ${userId}`);
+        this.logger.warn(`User not found: ${fid}`);
         return null;
       }
 
       // Get user's rank (simplified - you might want to use your existing leaderboard logic)
-      const rank = await this.getUserRank(userId);
+      const rank = await this.getUserRank(fid);
 
       const embedData: EmbedData = {
         title: `${user.username} on Running Leaderboard`,
@@ -107,7 +107,7 @@ export class EmbedsService {
       return this.generateEmbedHtml(embedData, 'leaderboard');
     } catch (error) {
       this.logger.error(
-        `Error generating leaderboard embed for ${userId}:`,
+        `Error generating leaderboard embed for ${fid}:`,
         error,
       );
       return null;
@@ -117,22 +117,22 @@ export class EmbedsService {
   /**
    * Generate leaderboard image HTML
    */
-  async generateLeaderboardImageHtml(userId: number): Promise<string | null> {
+  async generateLeaderboardImageHtml(fid: number): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found for image: ${userId}`);
+        this.logger.warn(`User not found for image: ${fid}`);
         return null;
       }
 
-      const rank = await this.getUserRank(userId);
+      const rank = await this.getUserRank(fid);
       return this.generateLeaderboardImageTemplate(user, rank);
     } catch (error) {
       this.logger.error(
-        `Error generating leaderboard image HTML for ${userId}:`,
+        `Error generating leaderboard image HTML for ${fid}:`,
         error,
       );
       return null;
@@ -143,17 +143,17 @@ export class EmbedsService {
    * Generate workout session embed
    */
   async generateWorkoutEmbed(
-    userId: number,
+    fid: number,
     distance: number,
     duration: string,
   ): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found: ${userId}`);
+        this.logger.warn(`User not found: ${fid}`);
         return null;
       }
 
@@ -166,7 +166,7 @@ export class EmbedsService {
       };
       return this.generateEmbedHtml(embedData, 'workout');
     } catch (error) {
-      this.logger.error(`Error generating workout embed for ${userId}:`, error);
+      this.logger.error(`Error generating workout embed for ${fid}:`, error);
       return null;
     }
   }
@@ -175,24 +175,24 @@ export class EmbedsService {
    * Generate workout image HTML
    */
   async generateWorkoutImageHtml(
-    userId: number,
+    fid: number,
     distance: number,
     duration: string,
   ): Promise<string | null> {
     try {
       const user = await this.userRepository.findOne({
-        where: { id: userId },
+        where: { fid },
       });
 
       if (!user) {
-        this.logger.warn(`User not found for image: ${userId}`);
+        this.logger.warn(`User not found for image: ${fid}`);
         return null;
       }
 
       return this.generateWorkoutImageTemplate(user, distance, duration);
     } catch (error) {
       this.logger.error(
-        `Error generating workout image HTML for ${userId}:`,
+        `Error generating workout image HTML for ${fid}:`,
         error,
       );
       return null;
@@ -526,14 +526,14 @@ export class EmbedsService {
   /**
    * Get user's rank in the leaderboard
    */
-  private async getUserRank(userId: number): Promise<number> {
+  private async getUserRank(fid: number): Promise<number> {
     try {
       const users = await this.userRepository.find({
-        select: ['id', 'runnerTokens'],
+        select: ['fid', 'runnerTokens'],
         order: { runnerTokens: 'DESC' },
       });
 
-      const userIndex = users.findIndex((user) => user.id === userId);
+      const userIndex = users.findIndex((user) => user.fid === fid);
       return userIndex !== -1 ? userIndex + 1 : 0;
     } catch (error) {
       this.logger.error('Error getting user rank:', error);

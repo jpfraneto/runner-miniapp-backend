@@ -11,22 +11,30 @@ import { AdminService } from './services/admin.service';
 // Models
 import {
   User,
-  TrainingPlan,
-  CompletedRun,
+  RunningSession,
   PlannedSession,
   UserStats,
+  TrainingPlan,
   WeeklyTrainingPlan,
-} from 'src/models';
+  Achievement,
+  CoachInteraction,
+  FarcasterCast,
+  NotificationQueue,
+} from '../../models';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       User,
-      TrainingPlan,
-      CompletedRun,
+      RunningSession,
       PlannedSession,
       UserStats,
+      TrainingPlan,
       WeeklyTrainingPlan,
+      Achievement,
+      CoachInteraction,
+      FarcasterCast,
+      NotificationQueue,
     ]),
   ],
   controllers: [AdminController],

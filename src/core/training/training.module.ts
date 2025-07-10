@@ -18,12 +18,16 @@ import {
 // Models
 import {
   User,
+  RunningSession,
+  PlannedSession,
+  UserStats,
   TrainingPlan,
   WeeklyTrainingPlan,
-  PlannedSession,
-  CompletedRun,
-  UserStats,
+  Achievement,
+  CoachInteraction,
   FarcasterCast,
+  NotificationQueue,
+  RunningInterval,
 } from '../../models';
 
 // Other modules
@@ -34,12 +38,16 @@ import { UserModule } from '../user/user.module';
   imports: [
     TypeOrmModule.forFeature([
       User,
+      RunningSession,
+      PlannedSession,
+      UserStats,
       TrainingPlan,
       WeeklyTrainingPlan,
-      PlannedSession,
-      CompletedRun,
-      UserStats,
+      Achievement,
+      CoachInteraction,
       FarcasterCast,
+      NotificationQueue,
+      RunningInterval,
     ]),
     AuthModule,
     UserModule,

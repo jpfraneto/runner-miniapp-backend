@@ -9,7 +9,8 @@ import { getConfig } from './security/config';
 // Models
 import {
   User,
-  CompletedRun,
+  RunningSession,
+  RunningInterval,
   PlannedSession,
   UserStats,
   TrainingPlan,
@@ -32,7 +33,8 @@ import {
       database: getConfig().db.name,
       entities: [
         User,
-        CompletedRun,
+        RunningSession,
+        RunningInterval,
         PlannedSession,
         UserStats,
         TrainingPlan,

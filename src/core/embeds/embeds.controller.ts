@@ -22,21 +22,21 @@ export class EmbedsController {
 
   /**
    * Generate dynamic embed for running achievement sharing
-   * URL: /embeds/achievement/:userId/:achievementType
+   * URL: /embeds/achievement/:fid/:achievementType
    */
-  @Get('/achievement/:userId/:achievementType')
+  @Get('/achievement/:fid/:achievementType')
   async getAchievementEmbed(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Param('achievementType') achievementType: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
       this.logger.log(
-        `Generating achievement embed for user ID: ${userId}, achievement: ${achievementType}`,
+        `Generating achievement embed for user FID: ${fid}, achievement: ${achievementType}`,
       );
 
       const embedHtml = await this.embedsService.generateAchievementEmbed(
-        Number(userId),
+        Number(fid),
         achievementType,
       );
 
@@ -54,7 +54,7 @@ export class EmbedsController {
       return res.send(embedHtml);
     } catch (error) {
       this.logger.error(
-        `Error generating achievement embed for ${userId}:`,
+        `Error generating achievement embed for ${fid}:`,
         error,
       );
       return hasError(
@@ -68,21 +68,21 @@ export class EmbedsController {
 
   /**
    * Generate achievement image (PNG)
-   * URL: /embeds/achievement/:userId/:achievementType/image
+   * URL: /embeds/achievement/:fid/:achievementType/image
    */
-  @Get('/achievement/:userId/:achievementType/image')
+  @Get('/achievement/:fid/:achievementType/image')
   async getAchievementImage(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Param('achievementType') achievementType: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
       this.logger.log(
-        `Generating achievement image for user ID: ${userId}, achievement: ${achievementType}`,
+        `Generating achievement image for user FID: ${fid}, achievement: ${achievementType}`,
       );
 
       const imageHtml = await this.embedsService.generateAchievementImageHtml(
-        Number(userId),
+        Number(fid),
         achievementType,
       );
 
@@ -101,7 +101,7 @@ export class EmbedsController {
       return res.send(imageHtml);
     } catch (error) {
       this.logger.error(
-        `Error generating achievement image for ${userId}:`,
+        `Error generating achievement image for ${fid}:`,
         error,
       );
       return hasError(
@@ -115,22 +115,22 @@ export class EmbedsController {
 
   /**
    * Generate dynamic embed for workout sharing
-   * URL: /embeds/workout/:userId/:distance/:duration
+   * URL: /embeds/workout/:fid/:distance/:duration
    */
-  @Get('/workout/:userId/:distance/:duration')
+  @Get('/workout/:fid/:distance/:duration')
   async getWorkoutEmbed(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Param('distance') distance: string,
     @Param('duration') duration: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
       this.logger.log(
-        `Generating workout embed for user ID: ${userId}, distance: ${distance}km, duration: ${duration}`,
+        `Generating workout embed for user FID: ${fid}, distance: ${distance}km, duration: ${duration}`,
       );
 
       const embedHtml = await this.embedsService.generateWorkoutEmbed(
-        Number(userId),
+        Number(fid),
         Number(distance),
         duration,
       );
@@ -147,7 +147,7 @@ export class EmbedsController {
       res.setHeader('Content-Type', 'text/html');
       return res.send(embedHtml);
     } catch (error) {
-      this.logger.error(`Error generating workout embed for ${userId}:`, error);
+      this.logger.error(`Error generating workout embed for ${fid}:`, error);
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -159,22 +159,22 @@ export class EmbedsController {
 
   /**
    * Generate workout image (PNG)
-   * URL: /embeds/workout/:userId/:distance/:duration/image
+   * URL: /embeds/workout/:fid/:distance/:duration/image
    */
-  @Get('/workout/:userId/:distance/:duration/image')
+  @Get('/workout/:fid/:distance/:duration/image')
   async getWorkoutImage(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Param('distance') distance: string,
     @Param('duration') duration: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
       this.logger.log(
-        `Generating workout image for user ID: ${userId}, distance: ${distance}km, duration: ${duration}`,
+        `Generating workout image for user FID: ${fid}, distance: ${distance}km, duration: ${duration}`,
       );
 
       const imageHtml = await this.embedsService.generateWorkoutImageHtml(
-        Number(userId),
+        Number(fid),
         Number(distance),
         duration,
       );
@@ -192,7 +192,7 @@ export class EmbedsController {
       res.setHeader('Cache-Control', 'public, max-age=3600');
       return res.send(imageHtml);
     } catch (error) {
-      this.logger.error(`Error generating workout image for ${userId}:`, error);
+      this.logger.error(`Error generating workout image for ${fid}:`, error);
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -204,18 +204,18 @@ export class EmbedsController {
 
   /**
    * Generate dynamic embed for leaderboard position sharing
-   * URL: /embeds/leaderboard/:userId
+   * URL: /embeds/leaderboard/:fid
    */
-  @Get('/leaderboard/:userId')
+  @Get('/leaderboard/:fid')
   async getLeaderboardEmbed(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
-      this.logger.log(`Generating leaderboard embed for user ID: ${userId}`);
+      this.logger.log(`Generating leaderboard embed for user FID: ${fid}`);
 
       const embedHtml = await this.embedsService.generateLeaderboardEmbed(
-        Number(userId),
+        Number(fid),
       );
 
       if (!embedHtml) {
@@ -231,7 +231,7 @@ export class EmbedsController {
       return res.send(embedHtml);
     } catch (error) {
       this.logger.error(
-        `Error generating leaderboard embed for ${userId}:`,
+        `Error generating leaderboard embed for ${fid}:`,
         error,
       );
       return hasError(
@@ -245,18 +245,18 @@ export class EmbedsController {
 
   /**
    * Generate leaderboard image (PNG)
-   * URL: /embeds/leaderboard/:userId/image
+   * URL: /embeds/leaderboard/:fid/image
    */
-  @Get('/leaderboard/:userId/image')
+  @Get('/leaderboard/:fid/image')
   async getLeaderboardImage(
-    @Param('userId') userId: string,
+    @Param('fid') fid: string,
     @Res() res: Response,
   ): Promise<Response> {
     try {
-      this.logger.log(`Generating leaderboard image for user ID: ${userId}`);
+      this.logger.log(`Generating leaderboard image for user FID: ${fid}`);
 
       const imageHtml = await this.embedsService.generateLeaderboardImageHtml(
-        Number(userId),
+        Number(fid),
       );
 
       if (!imageHtml) {
@@ -273,7 +273,7 @@ export class EmbedsController {
       return res.send(imageHtml);
     } catch (error) {
       this.logger.error(
-        `Error generating leaderboard image for ${userId}:`,
+        `Error generating leaderboard image for ${fid}:`,
         error,
       );
       return hasError(

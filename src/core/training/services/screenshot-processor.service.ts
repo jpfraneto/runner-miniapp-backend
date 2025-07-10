@@ -2,37 +2,29 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
-import { PROMPT_TWO } from './prompts';
+import { PROMPT_THREE } from './prompts';
 
 export interface ExtractedWorkoutData {
+  // Core fields that match RunningSession model
   distance?: number; // in km
   duration?: number; // in minutes
-  pace?: string; // e.g., "5:30/km"
+  pace?: string; // format: "mm:ss/km" or "mm:ss/mi"
   calories?: number;
-  elevationGain?: number; // in meters
   avgHeartRate?: number;
   maxHeartRate?: number;
-  steps?: number;
-  startTime?: string; // ISO string
-  endTime?: string; // ISO string
-  route?: {
-    name?: string;
-    type?: string; // outdoor, treadmill, track
-  };
-  splits?: Array<{
-    distance: number;
-    time: string;
-    pace: string;
-  }>;
-  weather?: {
-    temperature?: number;
-    conditions?: string;
-  };
-  runningApp?: string; // Nike Run Club, Strava, Garmin, etc.
   confidence: number; // 0-1 confidence score
   extractedText?: string[]; // raw OCR text for debugging
-  isWorkoutImage?: boolean; // New field to indicate if this is actually a workout
-  errorMessage?: string; // Fun message for non-workout images
+  isWorkoutImage?: boolean; // indicates if this is actually a workout
+  errorMessage?: string; // fun message for non-workout images
+
+  // Additional fields that can be extracted from screenshots
+  units?: 'km' | 'mi'; // distance units
+  completedDate?: string; // ISO string
+
+  // Added for interval/advanced support
+  intervals?: any[]; // Array of interval objects (type can be refined)
+  elevationGain?: number;
+  steps?: number;
 }
 
 @Injectable()
@@ -104,7 +96,7 @@ export class ScreenshotProcessorService {
     base64Images: string[],
   ): Promise<ExtractedWorkoutData> {
     console.log('🔍 Starting workout data extraction from images');
-    const systemPrompt = PROMPT_TWO;
+    const systemPrompt = PROMPT_THREE;
 
     try {
       console.log('🤖 Making API request to GPT-4 Vision');
@@ -121,7 +113,7 @@ export class ScreenshotProcessorService {
             content: [
               {
                 type: 'text',
-                text: 'Please analyze these images. First determine if they are workout screenshots, then extract data if they are. Return only the JSON object.',
+                text: 'Analyze these running app screenshots. Extract comprehensive workout data with perfect JSON formatting. Return only valid JSON.',
               },
               ...base64Images.map((image) => ({
                 type: 'image_url' as const,
@@ -148,8 +140,8 @@ export class ScreenshotProcessorService {
       // Clean the response to ensure it's valid JSON
       console.log('🧹 Cleaning JSON response');
       const cleanedContent = content.trim();
-      let jsonStart = cleanedContent.indexOf('{');
-      let jsonEnd = cleanedContent.lastIndexOf('}');
+      const jsonStart = cleanedContent.indexOf('{');
+      const jsonEnd = cleanedContent.lastIndexOf('}');
 
       if (jsonStart === -1 || jsonEnd === -1) {
         console.error('❌ Invalid JSON structure in response');
@@ -228,14 +220,6 @@ export class ScreenshotProcessorService {
     }
 
     if (
-      typeof data.elevationGain === 'number' &&
-      data.elevationGain >= 0 &&
-      data.elevationGain < 10000
-    ) {
-      validated.elevationGain = Math.round(data.elevationGain);
-    }
-
-    if (
       typeof data.avgHeartRate === 'number' &&
       data.avgHeartRate > 30 &&
       data.avgHeartRate < 250
@@ -251,14 +235,6 @@ export class ScreenshotProcessorService {
       validated.maxHeartRate = Math.round(data.maxHeartRate);
     }
 
-    if (
-      typeof data.steps === 'number' &&
-      data.steps > 0 &&
-      data.steps < 100000
-    ) {
-      validated.steps = Math.round(data.steps);
-    }
-
     // Validate string fields
     console.log('📝 Validating string fields');
     if (
@@ -269,87 +245,24 @@ export class ScreenshotProcessorService {
       validated.pace = data.pace.trim();
     }
 
+    // Validate units
+    if (data.units === 'km' || data.units === 'mi') {
+      validated.units = data.units;
+    }
+
+    // Validate completedDate
     if (
-      typeof data.runningApp === 'string' &&
-      data.runningApp.length > 0 &&
-      data.runningApp.length < 50
+      typeof data.completedDate === 'string' &&
+      data.completedDate.length > 0
     ) {
-      validated.runningApp = data.runningApp.trim();
-    }
-
-    // Validate dates
-    console.log('📅 Validating dates');
-    if (typeof data.startTime === 'string' && data.startTime.length > 0) {
       try {
-        const date = new Date(data.startTime);
+        const date = new Date(data.completedDate);
         if (!isNaN(date.getTime())) {
-          validated.startTime = data.startTime;
+          validated.completedDate = data.completedDate;
         }
       } catch (e) {
-        console.warn('⚠️ Invalid start time format');
+        console.warn('⚠️ Invalid completed date format');
       }
-    }
-
-    if (typeof data.endTime === 'string' && data.endTime.length > 0) {
-      try {
-        const date = new Date(data.endTime);
-        if (!isNaN(date.getTime())) {
-          validated.endTime = data.endTime;
-        }
-      } catch (e) {
-        console.warn('⚠️ Invalid end time format');
-      }
-    }
-
-    // Validate nested objects
-    console.log('🔍 Validating nested objects');
-    if (data.route && typeof data.route === 'object') {
-      validated.route = {};
-      if (typeof data.route.name === 'string' && data.route.name.length > 0) {
-        validated.route.name = data.route.name.trim();
-      }
-      if (typeof data.route.type === 'string' && data.route.type.length > 0) {
-        validated.route.type = data.route.type.trim();
-      }
-    }
-
-    if (data.weather && typeof data.weather === 'object') {
-      validated.weather = {};
-      if (
-        typeof data.weather.temperature === 'number' &&
-        data.weather.temperature > -50 &&
-        data.weather.temperature < 60
-      ) {
-        validated.weather.temperature = Math.round(data.weather.temperature);
-      }
-      if (
-        typeof data.weather.conditions === 'string' &&
-        data.weather.conditions.length > 0
-      ) {
-        validated.weather.conditions = data.weather.conditions.trim();
-      }
-    }
-
-    // Validate splits array
-    console.log('📊 Validating splits data');
-    if (Array.isArray(data.splits) && data.splits.length > 0) {
-      validated.splits = data.splits
-        .filter(
-          (split) =>
-            split &&
-            typeof split.distance === 'number' &&
-            split.distance > 0 &&
-            typeof split.time === 'string' &&
-            split.time.length > 0 &&
-            typeof split.pace === 'string' &&
-            split.pace.length > 0,
-        )
-        .slice(0, 20) // Limit to 20 splits max
-        .map((split) => ({
-          distance: Math.round(split.distance * 100) / 100,
-          time: split.time.trim(),
-          pace: split.pace.trim(),
-        }));
     }
 
     // Validate confidence
@@ -369,12 +282,10 @@ export class ScreenshotProcessorService {
       if (validated.duration) dataPoints++;
       if (validated.pace) dataPoints++;
       if (validated.calories) dataPoints++;
-      if (validated.runningApp) dataPoints++;
-      if (validated.route) dataPoints++;
-      if (validated.splits && validated.splits.length > 0) dataPoints++;
       if (validated.avgHeartRate) dataPoints++;
-      if (validated.elevationGain) dataPoints++;
-      if (validated.steps) dataPoints++;
+      if (validated.maxHeartRate) dataPoints++;
+      if (validated.units) dataPoints++;
+      if (validated.completedDate) dataPoints++;
 
       validated.confidence = Math.min(dataPoints / maxPoints, 0.9); // Max 90% confidence
     }

@@ -1,5 +1,5 @@
 export * from './User';
-export * from './CompletedRun';
+export * from './RunningSession';
 export * from './PlannedSession';
 export * from './UserStats';
 export * from './TrainingPlan';

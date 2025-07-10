@@ -47,7 +47,6 @@ import {
 } from 'typeorm';
 import { TrainingPlan } from '../TrainingPlan/TrainingPlan.model';
 import { PlannedSession } from '../PlannedSession/PlannedSession.model';
-import { CompletedRun } from '../CompletedRun/CompletedRun.model';
 
 export enum WeekTypeEnum {
   BUILD = 'build', // Building volume/intensity
@@ -126,9 +125,8 @@ export class WeeklyTrainingPlan {
   @JoinColumn({ name: 'trainingPlanId' })
   trainingPlan: TrainingPlan;
 
-  @OneToMany(() => PlannedSession, (session) => session.weeklyTrainingPlan)
+  @OneToMany(() => PlannedSession, (session) => session.weeklyTrainingPlan, {
+    cascade: true,
+  })
   plannedSessions: PlannedSession[];
-
-  @OneToMany(() => CompletedRun, (run) => run.weeklyTrainingPlan)
-  completedRuns: CompletedRun[];
 }

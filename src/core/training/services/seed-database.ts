@@ -4,10 +4,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AppDataSource } from '../../../data-source';
 import { User } from '../../../models/User/User.model';
-import { CompletedRun } from '../../../models/CompletedRun/CompletedRun.model';
+import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
 import { FarcasterCast } from '../../../models/FarcasterCast/FarcasterCast.model';
 import { UserRoleEnum } from '../../../models/User/User.types';
-import { RunStatusEnum } from '../../../models/CompletedRun/CompletedRun.model';
+import { UnitType } from '../../../models/RunningSession/RunningSession.model';
+
+/** Converts anything to a number or returns the fallback (0 by default). */
+const toNumber = (value: unknown, fallback: number | null = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 interface WorkoutSeedData {
   summary: {
@@ -112,7 +118,7 @@ export class DatabaseSeeder {
   private async clearExistingData(): Promise<void> {
     console.log('🧹 Clearing existing data...');
 
-    const entities = [CompletedRun, FarcasterCast, User];
+    const entities = [RunningSession, FarcasterCast, User];
 
     // Disable foreign key checks
     await this.dataSource.query('SET FOREIGN_KEY_CHECKS = 0');
@@ -193,7 +199,8 @@ export class DatabaseSeeder {
     console.log('🏃 Creating workout data...');
 
     const userMap = new Map(users.map((user) => [user.fid, user]));
-    const completedRunRepository = this.dataSource.getRepository(CompletedRun);
+    const runningSessionRepository =
+      this.dataSource.getRepository(RunningSession);
     const farcasterCastRepository =
       this.dataSource.getRepository(FarcasterCast);
 
@@ -212,67 +219,58 @@ export class DatabaseSeeder {
       const workoutData = session.workoutData;
       const completedDate = new Date(session.timestamp);
 
-      // Create CompletedRun - ensure all numeric values are properly converted
-      const completedRun = completedRunRepository.create({
+      // Create RunningSession - ensure all numeric values are properly converted
+      const runningSession = runningSessionRepository.create({
         userId: user.id,
-        status: RunStatusEnum.COMPLETED,
-        completedDate,
-        actualDistance: Number(workoutData.distance || 0),
-        actualTime: Number(workoutData.duration || 0),
-        avgPace: typeof workoutData.pace === 'string' ? workoutData.pace : null,
-        calories: Number(workoutData.calories || 0),
-        elevationGain: Number(workoutData.elevationGain || 0),
-        steps: Math.floor(Number(workoutData.distance || 0) * 1000),
-        screenshotUrl1: session.embeds[0]?.url || null,
-        screenshotUrl2: session.embeds[1]?.url || null,
-        screenshotUrl3: session.embeds[2]?.url || null,
-        screenshotUrl4: session.embeds[3]?.url || null,
-        runningApp: 'Strava',
-        extractionConfidence: Number(workoutData.confidence || 0),
-        weatherTemperature: 15 + Math.random() * 20,
-        weatherConditions: ['sunny', 'cloudy', 'rainy'][
-          Math.floor(Math.random() * 3)
-        ],
-        routeName: 'Morning Run',
-        routeType: 'outdoor',
-        rawText: (workoutData.extractedText || []).join(', '),
-        verified: true,
-        verifiedAt: new Date(),
-        isValidWorkout: true,
-        shared: true,
-        castHash: session.castHash,
-        sharedAt: completedDate,
-        performanceScore: 85 + Math.random() * 15,
-        exceededTargets: Math.random() > 0.5,
-        isPersonalBest: Math.random() > 0.8,
+        fid: user.fid,
+        comment: session.text,
+        isWorkoutImage: true,
+        distance: toNumber(workoutData.distance),
+        duration: toNumber(workoutData.duration),
+        units: workoutData.units === 'mi' ? UnitType.MI : UnitType.KM,
+        pace:
+          typeof workoutData.pace === 'string' ? workoutData.pace : '5:30/km',
+        confidence: toNumber(workoutData.confidence, 0.8),
+        extractedText: session.text ? [session.text] : [],
+        completedDate: completedDate,
+        createdAt: completedDate, // Use session timestamp for createdAt
+        calories: toNumber(workoutData.calories),
+        avgHeartRate: null,
+        maxHeartRate: null,
+        isPersonalBest: false,
+        personalBestType: null,
+        screenshotUrls: session.embeds[0]?.url ? [session.embeds[0].url] : [],
+        rawText: session.text,
         notes: session.text,
-        extractedAt: completedDate,
+        castHash: session.castHash,
       });
 
-      await completedRunRepository.save(completedRun);
+      const savedRunningSession =
+        await runningSessionRepository.save(runningSession);
 
       // Create FarcasterCast - ensure numeric values are properly converted
       const farcasterCast = farcasterCastRepository.create({
         userId: user.id,
+        completedRunId: savedRunningSession.id,
         farcasterCastHash: session.castHash,
         imageUrl: session.embeds[0]?.url || '',
         caption: session.text,
-        likes: Number(session.reactions.likes_count || 0),
-        comments: Number(session.replies.count || 0),
-        shares: Number(session.reactions.recasts_count || 0),
+        likes: toNumber(session.reactions.likes_count, 0),
+        comments: toNumber(session.replies.count, 0),
+        shares: toNumber(session.reactions.recasts_count, 0),
       });
 
       await farcasterCastRepository.save(farcasterCast);
 
       // Update user stats - ensure all values are numbers
-      user.totalRuns = Number(user.totalRuns) + 1;
+      user.totalRuns = toNumber(user.totalRuns) + 1;
       user.totalDistance =
-        Number(user.totalDistance) + Number(workoutData.distance || 0);
+        toNumber(user.totalDistance) + toNumber(workoutData.distance);
       user.totalTimeMinutes =
-        Number(user.totalTimeMinutes) + Number(workoutData.duration || 0);
-      user.totalShares = Number(user.totalShares) + 1;
+        toNumber(user.totalTimeMinutes) + toNumber(workoutData.duration);
+      user.totalShares = toNumber(user.totalShares) + 1;
       user.totalLikes =
-        Number(user.totalLikes) + Number(session.reactions.likes_count || 0);
+        toNumber(user.totalLikes) + toNumber(session.reactions.likes_count);
       user.lastRunDate = completedDate;
       user.lastActiveAt = completedDate;
 

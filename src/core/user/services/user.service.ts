@@ -5,11 +5,7 @@ import { Repository } from 'typeorm';
 
 // Models
 import { User, UserRoleEnum } from '../../../models';
-import {
-  CompletedRun,
-  RunStatusEnum,
-} from '../../../models/CompletedRun/CompletedRun.model';
-import { logger } from 'src/main';
+import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
 
 /**
  * Interface for leaderboard response with user position info
@@ -50,35 +46,9 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(CompletedRun)
-    private readonly completedRunRepository: Repository<CompletedRun>,
+    @InjectRepository(RunningSession)
+    private readonly runningSessionRepository: Repository<RunningSession>,
   ) {}
-
-  /**
-   * Retrieves a user by their ID with optional selected fields and relations.
-   *
-   * @param {User['id']} id - The ID of the user to retrieve.
-   * @param {(keyof User)[]} [select=[]] - Optional array of fields to select.
-   * @param {(keyof User)[]} [relations=[]] - Optional array of relations to include.
-   * @returns {Promise<User | undefined>} The user entity or undefined if not found.
-   */
-  async getById(
-    id: User['id'],
-    select: (keyof User)[] = [],
-    relations: (keyof User)[] = [],
-  ): Promise<User | undefined> {
-    return this.userRepository.findOne({
-      ...(select.length > 0 && {
-        select,
-      }),
-      where: {
-        id,
-      },
-      ...(relations.length > 0 && {
-        relations,
-      }),
-    });
-  }
 
   /**
    * Retrieves a user by their Farcaster ID with optional selected fields and relations.
@@ -192,41 +162,69 @@ export class UserService {
   }
 
   /**
-   * Gets the user's workout history
+   * Gets the user's workout history with pagination
    *
-   * @param {User['id']} userId - The ID of the user
+   * @param {number} fid - The Farcaster ID of the user
    * @param {number} page - Page number (default: 1)
-   * @param {number} limit - Number of runs per page (default: 50)
-   * @returns {Promise<any>} The user's workout history
+   * @param {number} limit - Number of runs per page (default: 30)
+   * @returns {Promise<{
+   *   workouts: RunningSession[];
+   *   pagination: {
+   *     page: number;
+   *     limit: number;
+   *     total: number;
+   *     totalPages: number;
+   *     hasNext: boolean;
+   *     hasPrev: boolean;
+   *   };
+   * }>} The user's workout history with pagination
    */
   async getWorkoutHistory(
-    userId: User['id'],
+    fid: number,
     page: number = 1,
-    limit: number = 50,
-  ): Promise<any> {
-    const skip = (page - 1) * limit;
+    limit: number = 30,
+  ): Promise<{
+    workouts: RunningSession[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+      hasNext: boolean;
+      hasPrev: boolean;
+    };
+  }> {
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit;
 
-    const [runs, total] = await this.completedRunRepository.findAndCount({
-      where: {
-        userId,
-        status: RunStatusEnum.COMPLETED,
-      },
-      order: {
-        completedDate: 'DESC',
-      },
-      skip,
-      take: limit,
-      relations: ['plannedSession', 'trainingPlan'],
+    // Get total count for pagination metadata
+    const total = await this.runningSessionRepository.count({
+      where: { fid },
     });
 
+    // Get workouts with pagination, ordered by creation date (newest first)
+    const workouts = await this.runningSessionRepository.find({
+      where: { fid },
+      order: { createdAt: 'DESC' },
+      skip: offset,
+      take: limit,
+      relations: ['intervals', 'user'], // Include intervals and user data
+    });
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
+
     return {
-      runs,
+      workouts,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        hasMore: page * limit < total,
+        totalPages,
+        hasNext,
+        hasPrev,
       },
     };
   }
@@ -234,10 +232,10 @@ export class UserService {
   /**
    * Gets the user's fitness stats
    *
-   * @param {User['id']} userId - The ID of the user
+   * @param {number} fid - The Farcaster ID of the user
    * @returns {Promise<any>} The user's fitness stats
    */
-  async getFitnessStats(userId: User['id']): Promise<any> {
+  async getFitnessStats(fid: number): Promise<any> {
     // TODO: Implement fitness stats retrieval
     return {};
   }
@@ -364,126 +362,264 @@ export class UserService {
   }
 
   /**
+   * Gets a user's profile including stats and recent workouts
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @returns {Promise<{
+   *   user: {
+   *     fid: number;
+   *     username: string;
+   *     pfpUrl: string;
+   *     displayName?: string;
+   *   };
+   *   stats: {
+   *     totalDistance: number;
+   *     totalDuration: number;
+   *     averagePace: string;
+   *     totalWorkouts: number;
+   *     personalBests: number;
+   *     favoriteDistance: string | null;
+   *     totalCalories: number;
+   *   };
+   *   recentWorkouts: {
+   *     workouts: RunningSession[];
+   *     pagination: {
+   *       page: number;
+   *       limit: number;
+   *       total: number;
+   *       totalPages: number;
+   *       hasNext: boolean;
+   *       hasPrev: boolean;
+   *     };
+   *   };
+   * } | null>} The user's profile data or null if not found
+   */
+  async getUserProfile(fid: number): Promise<{
+    user: {
+      fid: number;
+      username: string;
+      pfpUrl: string;
+      displayName?: string;
+    };
+    stats: {
+      totalDistance: number;
+      totalDuration: number;
+      averagePace: string;
+      totalWorkouts: number;
+      personalBests: number;
+      favoriteDistance: string | null;
+      totalCalories: number;
+    };
+    recentWorkouts: {
+      workouts: RunningSession[];
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    };
+  } | null> {
+    // Get the target user
+    const user = await this.userRepository.findOne({
+      where: { fid },
+      select: ['id', 'fid', 'username', 'pfpUrl'],
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // Get user's running sessions for stats calculation
+    const allSessions = await this.runningSessionRepository.find({
+      where: { fid },
+      order: { createdAt: 'DESC' },
+      relations: ['intervals', 'user'],
+    });
+
+    // Calculate statistics from all sessions
+    const stats = this.calculateUserStats(allSessions);
+
+    // Get recent workouts with pagination (max 16)
+    const recentWorkouts = await this.getWorkoutHistory(user.fid, 1, 16);
+
+    return {
+      user: {
+        fid: user.fid,
+        username: user.username,
+        pfpUrl: user.pfpUrl,
+        displayName: user.username, // Using username as displayName since displayName field doesn't exist
+      },
+      stats,
+      recentWorkouts,
+    };
+  }
+
+  /**
+   * Calculates user statistics from their workout sessions
+   *
+   * @param {RunningSession[]} sessions - Array of user's running sessions
+   * @returns {any} Calculated statistics
+   */
+  private calculateUserStats(sessions: RunningSession[]): any {
+    if (sessions.length === 0) {
+      return {
+        totalDistance: 0,
+        totalDuration: 0,
+        averagePace: '0:00/km',
+        totalWorkouts: 0,
+        personalBests: 0,
+        favoriteDistance: null,
+        totalCalories: 0,
+      };
+    }
+
+    // Calculate totals
+    const totalDistance = sessions.reduce(
+      (sum, session) => sum + Number(session.distance),
+      0,
+    );
+    const totalDuration = sessions.reduce(
+      (sum, session) => sum + session.duration,
+      0,
+    );
+    const totalCalories = sessions.reduce(
+      (sum, session) => sum + (session.calories || 0),
+      0,
+    );
+    const personalBests = sessions.filter(
+      (session) => session.isPersonalBest,
+    ).length;
+
+    // Calculate average pace
+    const averagePace = this.calculateAveragePace(totalDistance, totalDuration);
+
+    // Find favorite distance (most common distance range)
+    const favoriteDistance = this.findFavoriteDistance(sessions);
+
+    return {
+      totalDistance: Math.round(totalDistance * 100) / 100, // Round to 2 decimal places
+      totalDuration,
+      averagePace,
+      totalWorkouts: sessions.length,
+      personalBests,
+      favoriteDistance,
+      totalCalories,
+    };
+  }
+
+  /**
+   * Calculates average pace from total distance and duration
+   *
+   * @param {number} totalDistance - Total distance in km
+   * @param {number} totalDuration - Total duration in minutes
+   * @returns {string} Average pace in "mm:ss/km" format
+   */
+  private calculateAveragePace(
+    totalDistance: number,
+    totalDuration: number,
+  ): string {
+    if (totalDistance === 0) return '0:00/km';
+
+    const paceMinutesPerKm = totalDuration / totalDistance;
+    const minutes = Math.floor(paceMinutesPerKm);
+    const seconds = Math.round((paceMinutesPerKm - minutes) * 60);
+
+    return `${minutes}:${seconds.toString().padStart(2, '0')}/km`;
+  }
+
+  /**
+   * Finds the most common distance category from user's workouts
+   *
+   * @param {RunningSession[]} sessions - Array of user's running sessions
+   * @returns {string | null} Most common distance category
+   */
+  private findFavoriteDistance(sessions: RunningSession[]): string | null {
+    const distanceCategories: { [key: string]: number } = {};
+
+    sessions.forEach((session) => {
+      const distance = Number(session.distance);
+      let category: string;
+
+      if (distance <= 3) category = '3K';
+      else if (distance <= 5) category = '5K';
+      else if (distance <= 10) category = '10K';
+      else if (distance <= 21.1) category = 'Half Marathon';
+      else if (distance <= 42.2) category = 'Marathon';
+      else category = 'Ultra';
+
+      distanceCategories[category] = (distanceCategories[category] || 0) + 1;
+    });
+
+    if (Object.keys(distanceCategories).length === 0) return null;
+
+    return Object.keys(distanceCategories).reduce((a, b) =>
+      distanceCategories[a] > distanceCategories[b] ? a : b,
+    );
+  }
+
+  /**
    * Gets all users' workout history (public endpoint)
    *
    * @param {number} page - Page number (default: 1)
    * @param {number} limit - Number of runs per page (default: 50)
-   * @returns {Promise<any>} All users' workout history
+   * @returns {Promise<{
+   *   workouts: RunningSession[];
+   *   pagination: {
+   *     page: number;
+   *     limit: number;
+   *     total: number;
+   *     totalPages: number;
+   *     hasNext: boolean;
+   *     hasPrev: boolean;
+   *   };
+   * }>} All users' workout history with pagination
    */
   async getAllUsersWorkouts(
     page: number = 1,
     limit: number = 50,
-  ): Promise<any> {
-    console.log(
-      '📄 [UserService] Getting all workouts - Page:',
-      page,
-      'Limit:',
-      limit,
-    );
+  ): Promise<{
+    workouts: RunningSession[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+      hasNext: boolean;
+      hasPrev: boolean;
+    };
+  }> {
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit;
 
-    const skip = (page - 1) * limit;
+    // Get total count for pagination metadata
+    const total = await this.runningSessionRepository.count();
 
-    console.log('🔍 [UserService] Fetching workouts with skip:', skip);
+    // Get workouts with pagination, ordered by creation date (newest first)
+    const workouts = await this.runningSessionRepository.find({
+      order: { createdAt: 'DESC' },
+      skip: offset,
+      take: limit,
+      relations: ['intervals', 'user'], // Include intervals and user data
+    });
 
-    try {
-      console.log('🔍 [UserService] Executing raw SQL query...');
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
 
-      // Use raw SQL query to avoid TypeORM JSON parsing issues
-      const query = `
-        SELECT 
-          cr.id,
-          cr.userId,
-          cr.trainingPlanId,
-          cr.weeklyTrainingPlanId,
-          cr.plannedSessionId,
-          cr.status,
-          cr.completedDate,
-          cr.actualDistance,
-          cr.actualTime,
-          cr.calories,
-          cr.avgHeartRate,
-          cr.maxHeartRate,
-          cr.elevationGain,
-          cr.steps,
-          cr.verified,
-          cr.verifiedAt,
-          cr.isValidWorkout,
-          cr.validationNotes,
-          cr.notes,
-          cr.shareImageUrl,
-          cr.shared,
-          cr.castHash,
-          cr.sharedAt,
-          cr.performanceScore,
-          cr.exceededTargets,
-          cr.isPersonalBest,
-          cr.personalBestType,
-          cr.createdAt,
-          cr.updatedAt,
-          cr.extractedAt,
-          u.id as user_id,
-          u.fid as user_fid,
-          u.username as user_username,
-          u.pfpUrl as user_pfpUrl,
-          u.role as user_role,
-          u.runnerTokens as user_runnerTokens,
-          u.totalRuns as user_totalRuns,
-          u.totalDistance as user_totalDistance,
-          u.totalTimeMinutes as user_totalTimeMinutes,
-          u.currentStreak as user_currentStreak,
-          u.longestStreak as user_longestStreak,
-          u.createdAt as user_createdAt
-        FROM completed_runs cr
-        LEFT JOIN users u ON cr.userId = u.id
-        WHERE cr.status = 'completed'
-        ORDER BY cr.completedDate DESC
-        LIMIT ? OFFSET ?
-      `;
-
-      const countQuery = `
-        SELECT COUNT(*) as total
-        FROM completed_runs cr
-        WHERE cr.status = 'completed'
-      `;
-
-      console.log('🔍 [UserService] Running count query...');
-      const totalResult = await this.completedRunRepository.query(countQuery);
-      const total = totalResult[0].total;
-      console.log('📊 [UserService] Total workouts found:', total);
-
-      console.log(
-        '🔍 [UserService] Running main query with limit:',
+    return {
+      workouts,
+      pagination: {
+        page,
         limit,
-        'skip:',
-        skip,
-      );
-      const runs = await this.completedRunRepository.query(query, [
-        limit,
-        skip,
-      ]);
-      console.log(
-        '📊 [UserService] Query executed successfully, got',
-        runs.length,
-        'results',
-      );
-
-      console.log(
-        `✅ [UserService] Found ${runs.length} workouts out of ${total} total`,
-      );
-
-      return {
-        runs,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-          hasMore: page * limit < total,
-        },
-      };
-    } catch (error) {
-      console.error('❌ [UserService] Error fetching workouts:', error);
-      throw new Error('Failed to retrieve workouts due to database issues');
-    }
+        total,
+        totalPages,
+        hasNext,
+        hasPrev,
+      },
+    };
   }
 }

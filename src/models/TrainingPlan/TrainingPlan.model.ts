@@ -41,7 +41,6 @@ import {
 } from 'typeorm';
 import { User } from '../User/User.model';
 import { WeeklyTrainingPlan } from '../WeeklyTrainingPlan';
-import { CompletedRun } from '../CompletedRun/CompletedRun.model';
 import { PlannedSession } from '../PlannedSession';
 
 export enum GoalTypeEnum {
@@ -140,7 +139,4 @@ export class TrainingPlan {
 
   @OneToMany(() => PlannedSession, (session) => session.trainingPlan)
   allPlannedSessions: PlannedSession[];
-
-  @OneToMany(() => CompletedRun, (run) => run.trainingPlan)
-  allCompletedRuns: CompletedRun[];
 }

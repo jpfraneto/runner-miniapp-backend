@@ -754,8 +754,8 @@ export class AdminController {
       console.log('Completed run found:', {
         id: run.id,
         userId: run.userId,
-        actualDistance: run.actualDistance,
-        actualTime: run.actualTime,
+        distance: run.distance,
+        duration: run.duration,
       });
 
       return hasResponse(res, { run });

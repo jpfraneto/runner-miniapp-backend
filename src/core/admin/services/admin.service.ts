@@ -6,13 +6,13 @@ import {
   User,
   UserRoleEnum,
   TrainingPlan,
-  CompletedRun,
   PlannedSession,
   UserStats,
   WeeklyTrainingPlan,
   PlanStatusEnum,
   GoalTypeEnum,
 } from '../../../models';
+import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
 
 @Injectable()
 export class AdminService {
@@ -21,14 +21,14 @@ export class AdminService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(TrainingPlan)
     private readonly trainingPlanRepository: Repository<TrainingPlan>,
-    @InjectRepository(CompletedRun)
-    private readonly completedRunRepository: Repository<CompletedRun>,
     @InjectRepository(PlannedSession)
     private readonly plannedSessionRepository: Repository<PlannedSession>,
     @InjectRepository(UserStats)
     private readonly userStatsRepository: Repository<UserStats>,
     @InjectRepository(WeeklyTrainingPlan)
     private readonly weeklyTrainingPlanRepository: Repository<WeeklyTrainingPlan>,
+    @InjectRepository(RunningSession)
+    private readonly runningSessionRepository: Repository<RunningSession>,
   ) {
     console.log('AdminService initialized');
   }
@@ -365,85 +365,6 @@ export class AdminService {
   }
 
   // ================================
-  // COMPLETED RUN MANAGEMENT
-  // ================================
-
-  /**
-   * Get all completed runs with pagination
-   */
-  async getAllCompletedRuns(
-    page: number = 1,
-    limit: number = 50,
-  ): Promise<[CompletedRun[], number]> {
-    const skip = (page - 1) * limit;
-
-    return this.completedRunRepository.findAndCount({
-      relations: [
-        'user',
-        'trainingPlan',
-        'weeklyTrainingPlan',
-        'plannedSession',
-      ],
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit,
-    });
-  }
-
-  /**
-   * Get completed run by ID
-   */
-  async getCompletedRunById(id: number): Promise<CompletedRun> {
-    const run = await this.completedRunRepository.findOne({
-      where: { id },
-      relations: [
-        'user',
-        'trainingPlan',
-        'weeklyTrainingPlan',
-        'plannedSession',
-      ],
-    });
-
-    if (!run) {
-      throw new Error('Completed run not found');
-    }
-
-    return run;
-  }
-
-  /**
-   * Get completed run statistics
-   */
-  async getCompletedRunStats(): Promise<{
-    totalRuns: number;
-    totalDistance: number;
-    averageDistance: number;
-    totalTime: number;
-    averageTime: number;
-    sharedRuns: number;
-  }> {
-    const totalRuns = await this.completedRunRepository.count();
-
-    const statsResult = await this.completedRunRepository
-      .createQueryBuilder('run')
-      .select('SUM(run.actualDistance)', 'totalDistance')
-      .addSelect('AVG(run.actualDistance)', 'averageDistance')
-      .addSelect('SUM(run.actualTime)', 'totalTime')
-      .addSelect('AVG(run.actualTime)', 'averageTime')
-      .addSelect('COUNT(CASE WHEN run.shared = true THEN 1 END)', 'sharedRuns')
-      .getRawOne();
-
-    return {
-      totalRuns,
-      totalDistance: parseFloat(statsResult?.totalDistance || '0'),
-      averageDistance: parseFloat(statsResult?.averageDistance || '0'),
-      totalTime: parseInt(statsResult?.totalTime || '0'),
-      averageTime: parseFloat(statsResult?.averageTime || '0'),
-      sharedRuns: parseInt(statsResult?.sharedRuns || '0'),
-    };
-  }
-
-  // ================================
   // WEEKLY TRAINING PLAN MANAGEMENT
   // ================================
 
@@ -510,6 +431,127 @@ export class AdminService {
       completedWeeks,
       completionRate,
       averageCompletedRuns,
+    };
+  }
+
+  // ================================
+  // RUNNING SESSION MANAGEMENT
+  // ================================
+
+  /**
+   * Get all running sessions with pagination
+   */
+  async getAllRunningSessions(
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<[RunningSession[], number]> {
+    const skip = (page - 1) * limit;
+
+    return this.runningSessionRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
+    });
+  }
+
+  /**
+   * Get running session by ID
+   */
+  async getRunningSessionById(id: number): Promise<RunningSession> {
+    const session = await this.runningSessionRepository.findOne({
+      where: { id },
+    });
+
+    if (!session) {
+      throw new Error(`Running session with ID ${id} not found`);
+    }
+
+    return session;
+  }
+
+  /**
+   * Get running session statistics
+   */
+  async getRunningSessionStats(): Promise<{
+    totalSessions: number;
+    averageDistance: number;
+    averageDuration: number;
+    averageCompletedSessions: number;
+  }> {
+    const totalSessions = await this.runningSessionRepository.count();
+
+    const statsResult = await this.runningSessionRepository
+      .createQueryBuilder('rs')
+      .select('AVG(rs.distance)', 'averageDistance')
+      .addSelect('AVG(rs.duration)', 'averageDuration')
+      .getRawOne();
+
+    const averageDistance = parseFloat(statsResult?.averageDistance || '0');
+    const averageDuration = parseFloat(statsResult?.averageDuration || '0');
+
+    // For now, assume all sessions are completed since we simplified the model
+    const averageCompletedSessions = totalSessions;
+
+    return {
+      totalSessions,
+      averageDistance,
+      averageDuration,
+      averageCompletedSessions,
+    };
+  }
+
+  // ================================
+  // COMPLETED RUN MANAGEMENT (using RunningSession)
+  // ================================
+
+  /**
+   * Get all completed runs (RunningSessions) with pagination
+   */
+  async getAllCompletedRuns(
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<[RunningSession[], number]> {
+    const skip = (page - 1) * limit;
+    return this.runningSessionRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
+    });
+  }
+
+  /**
+   * Get completed run (RunningSession) by ID
+   */
+  async getCompletedRunById(id: number): Promise<RunningSession> {
+    const session = await this.runningSessionRepository.findOne({
+      where: { id },
+    });
+    if (!session) {
+      throw new Error(`Completed run (RunningSession) with ID ${id} not found`);
+    }
+    return session;
+  }
+
+  /**
+   * Get completed run statistics (RunningSession stats)
+   */
+  async getCompletedRunStats(): Promise<{
+    totalCompletedRuns: number;
+    averageDistance: number;
+    averageDuration: number;
+  }> {
+    const totalCompletedRuns = await this.runningSessionRepository.count();
+    const statsResult = await this.runningSessionRepository
+      .createQueryBuilder('rs')
+      .select('AVG(rs.distance)', 'averageDistance')
+      .addSelect('AVG(rs.duration)', 'averageDuration')
+      .getRawOne();
+    const averageDistance = parseFloat(statsResult?.averageDistance || '0');
+    const averageDuration = parseFloat(statsResult?.averageDuration || '0');
+    return {
+      totalCompletedRuns,
+      averageDistance,
+      averageDuration,
     };
   }
 }

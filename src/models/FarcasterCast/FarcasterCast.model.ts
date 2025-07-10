@@ -8,7 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../User/User.model';
-import { CompletedRun } from '../CompletedRun/CompletedRun.model';
+import { RunningSession } from '../RunningSession/RunningSession.model';
 
 @Entity({ name: 'farcaster_casts' })
 export class FarcasterCast {
@@ -50,7 +50,7 @@ export class FarcasterCast {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @ManyToOne(() => CompletedRun, { nullable: true })
-  @JoinColumn({ name: 'completedRunId' })
-  completedRun: CompletedRun;
+  @ManyToOne(() => RunningSession, { nullable: true })
+  @JoinColumn({ name: 'runningSessionId' })
+  runningSession: RunningSession;
 }

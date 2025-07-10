@@ -2,11 +2,11 @@
 
 import { NotificationQueue } from '../NotificationQueue';
 import { TrainingPlan } from '../TrainingPlan/TrainingPlan.model';
-import { CompletedRun } from '../CompletedRun/CompletedRun.model';
 import { UserStats } from '../UserStats/UserStats.model'; // Fixed import path
 import { Achievement } from '../Streaks/Streaks.model';
 import { CoachInteraction } from '../RunningCoach/RunningCoach.model';
 import { FarcasterCast } from '../FarcasterCast/FarcasterCast.model';
+import { RunningSession } from '../RunningSession/RunningSession.model';
 
 /**
  * @file This file defines the User entity with its properties and relationships.
@@ -258,8 +258,8 @@ export class User {
   @OneToMany(() => TrainingPlan, (plan) => plan.user, { cascade: true })
   trainingPlans: TrainingPlan[];
 
-  @OneToMany(() => CompletedRun, (run) => run.user, { cascade: true })
-  completedRuns: CompletedRun[];
+  @OneToMany(() => RunningSession, (session) => session.user, { cascade: true })
+  runningSessions: RunningSession[];
 
   // ADDED: UserStats relationship (1:1)
   @OneToOne(() => UserStats, (stats) => stats.user, { cascade: true })

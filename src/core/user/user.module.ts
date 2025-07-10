@@ -10,14 +10,14 @@ import { UserService } from './services';
 
 // Models
 import { User } from '../../models';
-import { CompletedRun } from '../../models/CompletedRun/CompletedRun.model';
+import { RunningSession } from '../../models/RunningSession/RunningSession.model';
 
 // Modules
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, CompletedRun]),
+    TypeOrmModule.forFeature([User, RunningSession]),
     forwardRef(() => AuthModule),
   ],
   controllers: [UserController],

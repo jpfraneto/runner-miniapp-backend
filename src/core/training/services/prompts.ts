@@ -302,3 +302,117 @@ CRITICAL JSON RULES:
 7. Objects with proper curly braces {}
 
 Return ONLY the JSON object with no additional text.`;
+
+export const PROMPT_THREE = `You are an expert at analyzing running app screenshots and extracting comprehensive workout data. You must be extremely careful with JSON formatting.
+
+CRITICAL INSTRUCTIONS:
+1. First determine if these are workout screenshots from running/fitness apps
+2. If NOT workout screenshots, return the simple non-workout JSON
+3. If YES workout screenshots, extract ALL visible data with perfect JSON formatting
+4. NEVER use comments (//) in JSON - they break parsing
+5. ALWAYS use double quotes for strings
+6. ALWAYS end objects and arrays with proper closing brackets
+
+NON-WORKOUT RESPONSE (for random photos, memes, food, etc.):
+{
+  "isWorkoutImage": false,
+  "confidence": 0,
+  "errorMessage": "not_workout_image"
+}
+
+WORKOUT RESPONSE (extract ALL visible data):
+{
+  "isWorkoutImage": true,
+  "distance": 12.95,
+  "duration": 67.38,
+  "units": "km",
+  "pace": "5:12/km",
+  "calories": 1025,
+  "elevationGain": 150,
+  "avgHeartRate": 147,
+  "maxHeartRate": 186,
+  "date": "2025-06-10",
+  "intervals": [
+    {
+      "number": 1,
+      "type": "warmup",
+      "distance": 1.5,
+      "duration": "7:30",
+      "pace": "5:00/km"
+    },
+    {
+      "number": 2,
+      "type": "work",
+      "distance": 3.2,
+      "duration": "16:00",
+      "pace": "5:00/km"
+    },
+    {
+      "number": 3,
+      "type": "recovery",
+      "distance": 0.8,
+      "duration": "4:00",
+      "pace": "5:00/km"
+    },
+    {
+      "number": 4,
+      "type": "work",
+      "distance": 3.2,
+      "duration": "16:00",
+      "pace": "5:00/km"
+    },
+    {
+      "number": 5,
+      "type": "cooldown",
+      "distance": 4.25,
+      "duration": "23:48",
+      "pace": "5:36/km"
+    }
+  ],
+  "confidence": 0.95,
+  "extractedText": [
+    "12.95 km",
+    "1:07:23",
+    "5:12/km average pace",
+    "147 bpm average",
+    "180 spm cadence"
+  ]
+}
+
+DETAILED EXTRACTION GUIDELINES:
+
+BASIC METRICS:
+- distance: Convert to km (miles × 1.609)
+- duration: Total minutes (1:07:23 = 67.38 minutes)
+- pace: Format as "X:XX/km" (convert from /mile by dividing by 1.609)
+- calories: Exact number if visible
+- elevation: Convert to meters (feet × 0.3048)
+
+INTERVALS DETECTION:
+Look for these patterns to identify structured workouts:
+1. Multiple segments with similar distances (like 3.2km + 3.2km)
+2. Pace variations showing work/rest patterns
+3. Time markers showing regular patterns
+4. Different pace targets for different segments
+
+For each interval, if you see them, determine:
+- type: "warmup", "work", "recovery", "cooldown", "tempo", "threshold"
+- distance: Segment distance in km
+- duration: Time as "MM:SS" format
+- pace: Average pace for that segment
+
+CONFIDENCE SCORING:
+- 0.9-1.0: Clear running app with all major metrics visible
+- 0.5-0.8: Running app with some metrics visible
+- 0.0-0.4: Not a workout or very unclear
+
+CRITICAL JSON RULES:
+1. NO trailing commas in objects or arrays
+2. NO comments with // or /* */
+3. ALL strings must use double quotes
+4. Numbers without quotes (12.95 not "12.95")
+5. Booleans as true/false (not "true"/"false")
+6. Arrays with proper square brackets []
+7. Objects with proper curly braces {}
+
+Return ONLY the JSON object with no additional text.`;

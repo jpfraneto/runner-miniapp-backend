@@ -7,16 +7,15 @@ import {
   Get,
   Post,
   Put,
-  Delete,
   Param,
   UseGuards,
-  Req,
   Res,
   UseInterceptors,
   UploadedFiles,
   ParseIntPipe,
   BadRequestException,
   NotFoundException,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -495,6 +494,159 @@ export class TrainingController {
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getValidationStatus',
         'Unable to retrieve validation status.',
+      );
+    }
+  }
+
+  /**
+   * Update a workout session
+   */
+  @Put('/workouts/:id')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Update a workout session' })
+  async updateWorkout(
+    @Session() session: QuickAuthPayload,
+    @Param('id', ParseIntPipe) workoutId: number,
+    @Body() updateData: any,
+    @Res() res: Response,
+  ) {
+    try {
+      const updatedWorkout = await this.trainingService.updateWorkout(
+        session.sub,
+        workoutId,
+        updateData,
+      );
+      return hasResponse(res, updatedWorkout);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'updateWorkout',
+          'Workout not found.',
+        );
+      }
+      if (error instanceof BadRequestException) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'updateWorkout',
+          error.message,
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'updateWorkout',
+        'Unable to update workout.',
+      );
+    }
+  }
+
+  /**
+   * Get global recent workouts from all users with pagination
+   */
+  @Get('/workouts')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({
+    summary: 'Get global recent workouts with pagination',
+    description:
+      'Retrieves the last 30 workouts from all users ordered by creation date with pagination support',
+  })
+  async getRecentWorkouts(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '30',
+    @Res() res: Response,
+  ) {
+    try {
+      console.log('🏃 [TrainingController] Getting global recent workouts');
+      const pageNumber = parseInt(page, 10);
+      const limitNumber = parseInt(limit, 10);
+
+      // Validate pagination parameters
+      if (pageNumber < 1 || limitNumber < 1 || limitNumber > 100) {
+        throw new BadRequestException(
+          'Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 100.',
+        );
+      }
+
+      const workouts = await this.trainingService.getRecentWorkouts(
+        pageNumber,
+        limitNumber,
+      );
+
+      return hasResponse(res, workouts);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'getRecentWorkouts',
+          error.message,
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getRecentWorkouts',
+        'Unable to retrieve recent workouts.',
+      );
+    }
+  }
+
+  /**
+   * Get leaderboard with aggregated user statistics
+   */
+  @Get('/leaderboard')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({
+    summary: 'Get leaderboard with aggregated user statistics',
+    description:
+      'Retrieves user statistics for the leaderboard with sorting and limiting options',
+  })
+  async getLeaderboard(
+    @Query('sortBy') sortBy: string = 'totalDistance',
+    @Query('limit') limit: string = '50',
+    @Res() res: Response,
+  ) {
+    try {
+      console.log('🏃 [TrainingController] Getting leaderboard data');
+      const limitNumber = parseInt(limit, 10);
+
+      // Validate parameters
+      const allowedSortBy = ['totalDistance', 'totalWorkouts', 'totalTime'];
+      if (!allowedSortBy.includes(sortBy)) {
+        throw new BadRequestException(
+          'Invalid sortBy parameter. Must be one of: totalDistance, totalWorkouts, totalTime',
+        );
+      }
+
+      if (limitNumber < 1 || limitNumber > 100) {
+        throw new BadRequestException(
+          'Invalid limit parameter. Must be between 1 and 100.',
+        );
+      }
+
+      const leaderboard = await this.trainingService.getLeaderboard(
+        sortBy,
+        limitNumber,
+      );
+
+      return hasResponse(res, leaderboard);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'getLeaderboard',
+          error.message,
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getLeaderboard',
+        'Unable to retrieve leaderboard data.',
       );
     }
   }

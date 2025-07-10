@@ -48,9 +48,9 @@ import {
   UpdateDateColumn,
   JoinColumn,
 } from 'typeorm';
+import { User } from '../User/User.model';
 import { TrainingPlan } from '../TrainingPlan/TrainingPlan.model';
 import { WeeklyTrainingPlan } from '../WeeklyTrainingPlan/WeeklyTrainingPlan.model';
-import { CompletedRun } from '../CompletedRun/CompletedRun.model';
 
 export enum SessionTypeEnum {
   INTERVALS = 'intervals',
@@ -155,6 +155,5 @@ export class PlannedSession {
   @JoinColumn({ name: 'weeklyTrainingPlanId' })
   weeklyTrainingPlan: WeeklyTrainingPlan;
 
-  @OneToMany(() => CompletedRun, (run) => run.plannedSession)
-  completedRuns: CompletedRun[]; // User might attempt multiple times
+  // Remove CompletedRun relationship
 }
