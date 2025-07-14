@@ -3,6 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { InjectRepository } from '@nestjs/typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { Repository } from 'typeorm';
 import { User } from '../../../models/User/User.model';
 import { UserRoleEnum } from '../../../models/User/User.types';
@@ -37,13 +38,40 @@ export interface CastWorkoutData {
 }
 
 export interface FarcasterCastData {
-  castHash: string;
+  hash: string;
   timestamp: string;
   text: string;
+  thread_hash: string;
+  parent_hash: string | null;
+  parent_url: string | null;
+  root_parent_url: string | null;
   author: {
+    object: string;
     fid: number;
     username: string;
+    display_name: string;
     pfp_url: string;
+    custody_address: string;
+    profile: any;
+    follower_count: number;
+    following_count: number;
+    verifications: string[];
+    power_badge?: boolean;
+    score?: number;
+  };
+  app?: {
+    object: string;
+    fid: number;
+    username: string;
+    display_name: string;
+    pfp_url: string;
+    custody_address: string;
+  };
+  channel?: {
+    object: string;
+    id: string;
+    name: string;
+    image_url: string;
   };
   embeds: Array<{
     url: string;
@@ -58,6 +86,15 @@ export interface FarcasterCastData {
   replies: {
     count: number;
   };
+  mentioned_profiles: any[];
+  mentioned_profiles_ranges: any[];
+  mentioned_channels: any[];
+  mentioned_channels_ranges: any[];
+  author_channel_context?: {
+    role: string;
+    following: boolean;
+  };
+  event_timestamp?: string;
 }
 
 const PROMPT_TWO = `You are an expert at analyzing running app screenshots and extracting comprehensive workout data. You must be extremely careful with JSON formatting.
@@ -174,35 +211,11 @@ CRITICAL JSON RULES:
 
 Return ONLY the JSON object with no additional text.`;
 
-const REPLY_PROMPT = `You are an encouraging running coach who responds to workout posts on Farcaster. 
-
-Create a short, motivating reply (max 280 characters) based on the workout data provided. The reply should:
-
-1. Acknowledge their achievement
-2. Highlight impressive metrics (pace, distance, duration, etc.)
-3. Use encouraging and positive language
-4. Include relevant emojis (running, fitness, achievement)
-5. Keep it personal and supportive
-6. Mention specific metrics from their workout
-
-Example format:
-"🔥 Amazing run! {distance}km in {duration}min at {pace} pace is incredible! Your consistency is inspiring. Keep pushing those limits! 💪"
-
-Available workout data:
-- Distance: {distance} km
-- Duration: {duration} minutes  
-- Pace: {pace}
-- Calories: {calories}
-- Heart rate: {heartRate} bpm
-- User's original text: "{userText}"
-
-Write a motivating reply that celebrates their achievement:`;
-
 @Injectable()
 export class CastProcessorService {
   private readonly logger = new Logger(CastProcessorService.name);
   private readonly openai: OpenAI;
-  private readonly neynarClient: any;
+  private readonly neynarClient: NeynarAPIClient;
 
   // Fun messages for different types of non-workout images
   private readonly funMessages = [
@@ -248,11 +261,6 @@ export class CastProcessorService {
     try {
       console.log('🔍 Creating encouraging reply to cast');
 
-      if (!result.isWorkoutImage || result.confidence < 0.3) {
-        console.log('📝 Not a workout or low confidence, skipping reply');
-        return { message: 'Not a workout, skipping reply' };
-      }
-
       // Generate encouraging reply using AI
       const replyText = await this.generateEncouragingReply(castData, result);
 
@@ -263,8 +271,9 @@ export class CastProcessorService {
 
       // Post reply to Farcaster
       const reply = await this.postReplyToFarcaster(
-        castData.castHash,
+        castData.hash,
         replyText,
+        uuidv4(),
       );
 
       console.log('✅ Successfully replied to cast');
@@ -289,30 +298,32 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<string> {
     try {
-      console.log('🤖 Generating encouraging reply using AI');
+      console.log('🤖 Generating encouraging reply using AI with user context');
 
-      const prompt = REPLY_PROMPT.replace(
-        '{distance}',
-        workoutData.distance?.toString() || 'N/A',
-      )
-        .replace('{duration}', workoutData.duration?.toString() || 'N/A')
-        .replace('{pace}', workoutData.pace || 'N/A')
-        .replace('{calories}', workoutData.calories?.toString() || 'N/A')
-        .replace('{heartRate}', workoutData.avgHeartRate?.toString() || 'N/A')
-        .replace('{userText}', castData.text || '');
+      // Gather comprehensive user context
+      const userContext = await this.gatherUserContext(
+        castData.author.fid,
+        workoutData,
+      );
+
+      // Create contextual prompt
+      const contextualPrompt = this.createContextualPrompt(
+        castData,
+        workoutData,
+        userContext,
+      );
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        max_tokens: 150,
+        max_tokens: 200,
         messages: [
           {
             role: 'system',
-            content:
-              'You are an encouraging running coach. Write short, motivating replies to workout posts.',
+            content: this.getSystemPromptForPersonalizedReply(userContext),
           },
           {
             role: 'user',
-            content: prompt,
+            content: contextualPrompt,
           },
         ],
         temperature: 0.7,
@@ -324,7 +335,7 @@ export class CastProcessorService {
         throw new Error('No reply generated');
       }
 
-      console.log('✅ Generated reply:', replyText);
+      console.log('✅ Generated personalized reply:', replyText);
       return replyText;
     } catch (error) {
       console.error('❌ Error generating reply:', error);
@@ -336,25 +347,404 @@ export class CastProcessorService {
     }
   }
 
+  private async gatherUserContext(
+    fid: number,
+    workoutData: CastWorkoutData,
+  ): Promise<any> {
+    try {
+      console.log('📊 Gathering comprehensive user context for FID:', fid);
+
+      // Find user with all relevant relationships
+      const user = await this.userRepository.findOne({
+        where: { fid },
+        relations: [
+          'detailedStats',
+          'achievements',
+          'runningSessions',
+          'coachInteractions',
+          'farcasterCasts',
+        ],
+      });
+
+      if (!user) {
+        console.log('👤 User not found, using basic context');
+        return { isNewUser: true, username: 'runner' };
+      }
+
+      // Get recent running sessions (last 30 days)
+      const recentSessions = await this.runningSessionRepository.find({
+        where: { userId: user.id },
+        order: { completedDate: 'DESC' },
+        take: 10,
+      });
+
+      // Calculate streak information
+      const streakInfo = this.calculateCurrentStreak(recentSessions);
+
+      // Get recent achievements (last 30 days)
+      const recentAchievements =
+        user.achievements?.filter(
+          (achievement) =>
+            achievement.earnedAt &&
+            new Date(achievement.earnedAt) >
+              new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        ) || [];
+
+      // Determine user's running pattern and progress
+      const runningPattern = this.analyzeRunningPattern(recentSessions);
+      const personalRecords = this.identifyPersonalRecords(
+        recentSessions,
+        workoutData,
+      );
+
+      return {
+        isNewUser: false,
+        user: {
+          username: user.username,
+          totalRuns: user.totalRuns,
+          totalDistance: user.totalDistance,
+          currentStreak: user.currentStreak,
+          longestStreak: user.longestStreak,
+          fitnessLevel: user.fitnessLevel,
+          coachPersonality: user.coachPersonality,
+          lastRunDate: user.lastRunDate,
+          preferredWeeklyFrequency: user.preferredWeeklyFrequency,
+        },
+        stats: user.detailedStats
+          ? {
+              thisWeekRuns: user.detailedStats.thisWeekRuns,
+              thisWeekDistance: user.detailedStats.thisWeekDistance,
+              thisMonthRuns: user.detailedStats.thisMonthRuns,
+              bestPace: user.detailedStats.bestPace,
+              longestRun: user.detailedStats.longestRun,
+              avgRunDistance: user.detailedStats.avgRunDistance,
+              planCompletionRate: user.detailedStats.planCompletionRate,
+              weeklyConsistencyScore: user.detailedStats.weeklyConsistencyScore,
+            }
+          : null,
+        recentSessions: recentSessions.slice(0, 5).map((session) => ({
+          distance: session.distance,
+          duration: session.duration,
+          pace: session.pace,
+          completedDate: session.completedDate,
+          confidence: session.confidence,
+        })),
+        recentAchievements,
+        streakInfo,
+        runningPattern,
+        personalRecords,
+      };
+    } catch (error) {
+      console.error('❌ Error gathering user context:', error);
+      return { isNewUser: true, username: 'runner' };
+    }
+  }
+
+  private calculateCurrentStreak(sessions: any[]): any {
+    if (!sessions || sessions.length === 0) {
+      return { currentStreak: 0, streakType: 'none' };
+    }
+
+    // Sort by date descending
+    const sortedSessions = sessions.sort(
+      (a, b) =>
+        new Date(b.completedDate).getTime() -
+        new Date(a.completedDate).getTime(),
+    );
+
+    let currentStreak = 0;
+    let lastDate = new Date();
+
+    for (const session of sortedSessions) {
+      const sessionDate = new Date(session.completedDate);
+      const daysDiff = Math.floor(
+        (lastDate.getTime() - sessionDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      if (daysDiff <= 1) {
+        currentStreak++;
+        lastDate = sessionDate;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      currentStreak,
+      streakType:
+        currentStreak >= 7
+          ? 'strong'
+          : currentStreak >= 3
+            ? 'building'
+            : 'starting',
+      daysSinceLastRun: Math.floor(
+        (new Date().getTime() -
+          new Date(sortedSessions[0].completedDate).getTime()) /
+          (1000 * 60 * 60 * 24),
+      ),
+    };
+  }
+
+  private analyzeRunningPattern(sessions: any[]): any {
+    if (!sessions || sessions.length < 3) {
+      return { pattern: 'new', consistency: 'irregular' };
+    }
+
+    const totalDistance = sessions.reduce(
+      (sum, s) => sum + (s.distance || 0),
+      0,
+    );
+    const avgDistance = totalDistance / sessions.length;
+    const avgDuration =
+      sessions.reduce((sum, s) => sum + (s.duration || 0), 0) / sessions.length;
+
+    // Determine running pattern
+    const runsPerWeek = sessions.length / 4; // assuming last 4 weeks
+    let pattern = 'casual';
+    let consistency = 'irregular';
+
+    if (runsPerWeek >= 5) {
+      pattern = 'dedicated';
+      consistency = 'excellent';
+    } else if (runsPerWeek >= 3) {
+      pattern = 'regular';
+      consistency = 'good';
+    } else if (runsPerWeek >= 1) {
+      pattern = 'casual';
+      consistency = 'moderate';
+    }
+
+    return {
+      pattern,
+      consistency,
+      avgDistance: Math.round(avgDistance * 100) / 100,
+      avgDuration: Math.round(avgDuration),
+      runsPerWeek: Math.round(runsPerWeek * 10) / 10,
+    };
+  }
+
+  private identifyPersonalRecords(
+    sessions: any[],
+    currentWorkout: CastWorkoutData,
+  ): any {
+    if (!sessions || sessions.length === 0) {
+      return { isNewPR: true, prType: 'first_run' };
+    }
+
+    const currentDistance = currentWorkout.distance || 0;
+    const currentDuration = currentWorkout.duration || 0;
+
+    // Check for distance PR
+    const maxDistance = Math.max(...sessions.map((s) => s.distance || 0));
+    const isDistancePR = currentDistance > maxDistance;
+
+    // Check for duration PR
+    const maxDuration = Math.max(...sessions.map((s) => s.duration || 0));
+    const isDurationPR = currentDuration > maxDuration;
+
+    // Check for pace PR (if available)
+    let isPacePR = false;
+    if (currentWorkout.pace && sessions.some((s) => s.pace)) {
+      const currentPaceMinutes = this.paceToMinutes(currentWorkout.pace);
+      const bestPaceMinutes = Math.min(
+        ...sessions
+          .filter((s) => s.pace)
+          .map((s) => this.paceToMinutes(s.pace)),
+      );
+      isPacePR = currentPaceMinutes < bestPaceMinutes;
+    }
+
+    return {
+      isNewPR: isDistancePR || isDurationPR || isPacePR,
+      prType: isDistancePR
+        ? 'distance'
+        : isDurationPR
+          ? 'duration'
+          : isPacePR
+            ? 'pace'
+            : 'none',
+      distanceImprovement: isDistancePR
+        ? (((currentDistance - maxDistance) / maxDistance) * 100).toFixed(1)
+        : null,
+      durationImprovement: isDurationPR
+        ? (((currentDuration - maxDuration) / maxDuration) * 100).toFixed(1)
+        : null,
+    };
+  }
+
+  private paceToMinutes(pace: string): number {
+    const match = pace.match(/(\d+):(\d+)/);
+    if (!match) return 999;
+    return parseInt(match[1]) + parseInt(match[2]) / 60;
+  }
+
+  private getSystemPromptForPersonalizedReply(userContext: any): string {
+    const personality = userContext.user?.coachPersonality || 'motivational';
+    const fitnessLevel = userContext.user?.fitnessLevel || 'beginner';
+
+    let basePrompt = `You are a sharp, data-driven running analyst who tells compelling stories with numbers. You don't use emojis. You speak directly and factually, but with wit and edge. You're not a cheerleader - you're a data storyteller who reveals fascinating insights about performance.`;
+
+    // Personality variations affect tone but not the core data-driven approach
+    if (personality === 'motivational') {
+      basePrompt += ` Your tone is energetic and you highlight impressive achievements and trends.`;
+    } else if (personality === 'supportive') {
+      basePrompt += ` Your tone is warm but still data-focused, emphasizing positive trends and growth.`;
+    } else if (personality === 'strict') {
+      basePrompt += ` Your tone is direct and analytical, focusing on performance gaps and areas for improvement.`;
+    }
+
+    basePrompt += ` The runner's fitness level is ${fitnessLevel}. Your responses should be contextually intelligent.`;
+
+    return (
+      basePrompt +
+      `
+  
+  Key guidelines:
+  - Maximum 280 characters (Farcaster limit)
+  - Lead with fascinating data insights, not motivation
+  - Compare their performance to community benchmarks when relevant
+  - Highlight trends, improvements, or notable patterns
+  - Use their actual numbers and achievements as the story
+  - Make them curious about their own progress
+  - No generic cheerleading - everything must be specific to their data
+  - Focus on what makes this run interesting from a data perspective
+  - Encourage through insight, not empty praise`
+    );
+  }
+
+  private createContextualPrompt(
+    castData: FarcasterCastData,
+    workoutData: CastWorkoutData,
+    userContext: any,
+  ): string {
+    const {
+      user,
+      stats,
+      recentSessions,
+      streakInfo,
+      runningPattern,
+      personalRecords,
+    } = userContext;
+
+    if (userContext.isNewUser) {
+      return `Analyze this first-time runner's debut performance and create a data-driven welcome:
+  - Distance: ${workoutData.distance || 'N/A'}km
+  - Duration: ${workoutData.duration || 'N/A'} minutes  
+  - Pace: ${workoutData.pace || 'N/A'}
+  - Their message: "${castData.text || ''}"
+  
+  Focus on what their debut numbers reveal about their potential. Compare to typical beginner baselines. Make them curious about tracking their progression.`;
+    }
+
+    let prompt = `Analyze this runner's performance using comprehensive data context and create a compelling data story:
+  
+  CURRENT WORKOUT ANALYSIS:
+  - Distance: ${workoutData.distance || 'N/A'}km
+  - Duration: ${workoutData.duration || 'N/A'} minutes
+  - Pace: ${workoutData.pace || 'N/A'}
+  - Calories: ${workoutData.calories || 'N/A'}
+  - Heart Rate: ${workoutData.avgHeartRate || 'N/A'} bpm
+  - User's message: "${castData.text || ''}"
+  
+  RUNNER'S PERFORMANCE PROFILE:
+  - Username: @${user.username}
+  - Total runs: ${user.totalRuns || 0} (career data point)
+  - Total distance: ${user.totalDistance || 0}km (lifetime achievement)
+  - Current streak: ${user.currentStreak || 0} days
+  - Longest streak: ${user.longestStreak || 0} days
+  - Fitness level: ${user.fitnessLevel}
+  - Days since last run: ${streakInfo.daysSinceLastRun || 0}`;
+
+    if (stats) {
+      prompt += `
+  
+  PERFORMANCE METRICS:
+  - This week: ${stats.thisWeekRuns} runs, ${stats.thisWeekDistance}km
+  - This month: ${stats.thisMonthRuns} runs total
+  - Personal best pace: ${stats.bestPace || 'N/A'} min/km
+  - Longest distance: ${stats.longestRun || 'N/A'}km
+  - Average run length: ${stats.avgRunDistance || 'N/A'}km
+  - Weekly consistency: ${stats.weeklyConsistencyScore || 'N/A'}%`;
+    }
+
+    prompt += `
+  
+  PATTERN ANALYSIS:
+  - Running pattern: ${runningPattern.pattern} runner (${runningPattern.runsPerWeek} runs/week average)
+  - Consistency rating: ${runningPattern.consistency}
+  - Average distance per run: ${runningPattern.avgDistance}km
+  - Average duration per run: ${runningPattern.avgDuration} minutes`;
+
+    if (personalRecords.isNewPR) {
+      prompt += `
+  
+  PERSONAL RECORD ALERT:
+  - NEW PR TYPE: ${personalRecords.prType}
+  - Distance improvement: ${personalRecords.distanceImprovement || 'N/A'}%
+  - Duration improvement: ${personalRecords.durationImprovement || 'N/A'}%
+  This is a breakthrough performance that deserves data-driven recognition.`;
+    }
+
+    if (streakInfo.streakType === 'strong') {
+      prompt += `
+  
+  STREAK ANALYSIS: Currently on a ${streakInfo.currentStreak}-day streak - this puts them in elite consistency territory.`;
+    } else if (streakInfo.streakType === 'building') {
+      prompt += `
+  
+  MOMENTUM TRACKING: ${streakInfo.currentStreak}-day streak building - consistency patterns are forming.`;
+    }
+
+    if (recentSessions.length > 0) {
+      prompt += `
+  
+  RECENT PERFORMANCE TREND (last 5 runs):`;
+      recentSessions.forEach((session, index) => {
+        prompt += `
+  ${index + 1}. ${session.distance}km in ${session.duration}min (${session.pace}) - ${session.completedDate}`;
+      });
+    }
+
+    prompt += `
+  
+  DATA STORYTELLING MISSION:
+  Create a response that:
+  1. Leads with the most fascinating data insight from this run
+  2. Puts their performance in context using their historical data
+  3. Compares to relevant benchmarks or patterns when available
+  4. Identifies what makes this specific run noteworthy
+  5. Uses concrete numbers and trends to build the narrative
+  6. Makes them curious about their own progression patterns
+  7. Encourages continued data collection (more runs = better insights)
+  8. Uses their username naturally but sparingly
+  9. No generic motivation - everything must be anchored in their actual performance data
+  
+  Remember: You're not cheering them on, you're revealing what their data says about their running story.`;
+
+    return prompt;
+  }
+
   private generateFallbackReply(workoutData: CastWorkoutData): string {
     const distance = workoutData.distance;
     const duration = workoutData.duration;
     const pace = workoutData.pace;
 
+    // Even fallback replies should be data-focused, not motivational
     if (distance && duration && pace) {
-      return `🔥 Amazing run! ${distance}km in ${duration}min at ${pace} pace is incredible! Keep pushing those limits! 💪`;
+      return `${distance}km in ${duration}min at ${pace} pace. That's a ${((distance / duration) * 60).toFixed(1)} km/hour average speed. Solid data point for your running profile.`;
     } else if (distance && duration) {
-      return `🏃‍♂️ Great workout! ${distance}km in ${duration}min - you're building amazing endurance! Keep it up! ✨`;
+      return `${distance}km in ${duration}min logged. That's ${(duration / distance).toFixed(1)} minutes per kilometer - good baseline for tracking progression.`;
     } else if (distance) {
-      return `🎯 Solid distance! ${distance}km is a fantastic achievement. Your consistency is inspiring! 💪`;
+      return `${distance}km distance recorded. Each run adds to your performance dataset - consistency builds patterns.`;
     } else {
-      return `🏃‍♀️ Great workout! Keep pushing your limits and building that endurance! You're doing amazing! ✨`;
+      return `Workout logged. More detailed data in future runs will unlock better insights about your progression patterns.`;
     }
   }
 
   private async postReplyToFarcaster(
     parentCastHash: string,
     replyText: string,
+    idempotencyKey: string,
   ): Promise<any> {
     try {
       console.log('📤 Posting reply to Farcaster');
@@ -366,13 +756,21 @@ export class CastProcessorService {
       if (!signerUuid) {
         throw new Error('NEYNAR_SIGNER_UUID not configured');
       }
-
       // Post reply using Neynar API
-      const reply = await this.neynarClient.publishCast(signerUuid, replyText, {
-        replyTo: parentCastHash,
+      const reply = await this.neynarClient.publishCast({
+        signerUuid,
+        text: replyText,
+        parent: parentCastHash,
+        idem: idempotencyKey,
+        embeds: [
+          {
+            url: 'https://runnercoin.lat',
+          },
+        ],
       });
+      console.log('🔍 THE REPLY:', reply);
 
-      console.log('✅ Reply posted successfully:', reply?.hash);
+      console.log('✅ Reply posted successfully:', reply?.cast?.hash);
       return reply;
     } catch (error) {
       console.error('❌ Error posting reply:', error);
@@ -385,7 +783,7 @@ export class CastProcessorService {
       console.log(
         `📸 Processing cast with ${castData.embeds?.length || 0} embeds`,
       );
-      this.logger.log(`Processing cast ${castData.castHash} with GPT-4 Vision`);
+      this.logger.log(`Processing cast ${castData.hash} with GPT-4 Vision`);
 
       // Filter image embeds
       const imageEmbeds = castData.embeds.filter(
@@ -807,7 +1205,7 @@ export class CastProcessorService {
         screenshotUrls: castData.embeds[0]?.url ? [castData.embeds[0].url] : [],
         rawText: castData.text,
         notes: castData.text,
-        castHash: castData.castHash,
+        castHash: castData.hash,
       });
 
       const savedRunningSession =
@@ -817,7 +1215,7 @@ export class CastProcessorService {
       const farcasterCast = this.farcasterCastRepository.create({
         userId: user.id,
         completedRunId: savedRunningSession.id,
-        farcasterCastHash: castData.castHash,
+        farcasterCastHash: castData.hash,
         imageUrl: castData.embeds[0]?.url || '',
         caption: castData.text,
         likes: Number(castData.reactions.likes_count || 0),

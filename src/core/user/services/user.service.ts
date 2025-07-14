@@ -33,10 +33,20 @@ export class UserService {
    * Cache for leaderboard data
    */
   private leaderboardCache: {
-    users: User[];
-    lastUpdated: Date;
-    total: number;
-  } | null = null;
+    'all-time': {
+      users: User[];
+      lastUpdated: Date;
+      total: number;
+    } | null;
+    weekly: {
+      users: User[];
+      lastUpdated: Date;
+      total: number;
+    } | null;
+  } = {
+    'all-time': null,
+    weekly: null,
+  };
 
   /**
    * Cache TTL in milliseconds (15 minutes)
@@ -246,29 +256,36 @@ export class UserService {
    * @param {number} page - The page number for pagination
    * @param {number} limit - The number of records per page
    * @param {number} currentUserFid - The Farcaster ID of the current user
+   * @param {string} timePeriod - The time period filter ('weekly' or 'all-time')
    * @returns {Promise<LeaderboardResponse>} The leaderboard data
    */
   async getFitnessLeaderboard(
     page: number,
     limit: number,
     currentUserFid: number,
+    timePeriod: 'weekly' | 'all-time' = 'all-time',
   ): Promise<LeaderboardResponse> {
-    await this.refreshLeaderboardCacheIfNeeded();
+    await this.refreshLeaderboardCacheIfNeeded(timePeriod);
+
+    const cache = this.leaderboardCache[timePeriod];
+    if (!cache) {
+      throw new Error(`Leaderboard cache for ${timePeriod} is not available`);
+    }
 
     const skip = (page - 1) * limit;
-    const users = this.leaderboardCache!.users.slice(skip, skip + limit);
-    const total = this.leaderboardCache!.total;
+    const users = cache.users.slice(skip, skip + limit);
+    const total = cache.total;
     const totalPages = Math.ceil(total / limit);
 
     let currentUser: LeaderboardResponse['currentUser'] | undefined;
 
     if (currentUserFid) {
-      const currentUserIndex = this.leaderboardCache!.users.findIndex(
+      const currentUserIndex = cache.users.findIndex(
         (user) => user.fid === currentUserFid,
       );
 
       if (currentUserIndex !== -1) {
-        const user = this.leaderboardCache!.users[currentUserIndex];
+        const user = cache.users[currentUserIndex];
         currentUser = {
           position: currentUserIndex + 1,
           runnerTokens: user.runnerTokens,
@@ -301,16 +318,40 @@ export class UserService {
    *
    * @private
    */
-  private async refreshLeaderboardCacheIfNeeded(): Promise<void> {
+  private async refreshLeaderboardCacheIfNeeded(
+    timePeriod: 'weekly' | 'all-time',
+  ): Promise<void> {
     const now = new Date();
+    const cache = this.leaderboardCache[timePeriod];
     const shouldRefresh =
-      !this.leaderboardCache ||
-      now.getTime() - this.leaderboardCache.lastUpdated.getTime() >
-        this.CACHE_TTL;
+      !cache || now.getTime() - cache.lastUpdated.getTime() > this.CACHE_TTL;
 
     if (shouldRefresh) {
-      await this.refreshLeaderboardCache();
+      await this.refreshLeaderboardCache(timePeriod);
     }
+  }
+
+  /**
+   * Get the current week's date range (Monday to Sunday)
+   *
+   * @private
+   */
+  private getCurrentWeekRange(): { start: Date; end: Date } {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+    // Calculate days to subtract to get to Monday (start of week)
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - daysToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    return { start: startOfWeek, end: endOfWeek };
   }
 
   /**
@@ -318,35 +359,45 @@ export class UserService {
    *
    * @private
    */
-  private async refreshLeaderboardCache(): Promise<void> {
+  private async refreshLeaderboardCache(
+    timePeriod: 'weekly' | 'all-time',
+  ): Promise<void> {
     try {
-      const users = await this.userRepository.find({
-        select: [
-          'id',
-          'fid',
-          'username',
-          'pfpUrl',
-          'runnerTokens',
-          'createdAt',
-        ],
-        order: {
-          runnerTokens: 'DESC',
-          createdAt: 'ASC', // Ties broken by earliest registration
-        },
-      });
+      let users: User[];
 
-      this.leaderboardCache = {
+      if (timePeriod === 'weekly') {
+        // For weekly leaderboard, we need to calculate weekly stats
+        users = await this.getWeeklyLeaderboard();
+      } else {
+        // For all-time leaderboard, use existing logic
+        users = await this.userRepository.find({
+          select: [
+            'id',
+            'fid',
+            'username',
+            'pfpUrl',
+            'runnerTokens',
+            'createdAt',
+          ],
+          order: {
+            runnerTokens: 'DESC',
+            createdAt: 'ASC', // Ties broken by earliest registration
+          },
+        });
+      }
+
+      this.leaderboardCache[timePeriod] = {
         users,
         total: users.length,
         lastUpdated: new Date(),
       };
 
       console.log(
-        `✅ [UserService] Leaderboard cache refreshed with ${users.length} users`,
+        `✅ [UserService] ${timePeriod} leaderboard cache refreshed with ${users.length} users`,
       );
     } catch (error) {
       console.error(
-        '❌ [UserService] Failed to refresh leaderboard cache:',
+        `❌ [UserService] Failed to refresh ${timePeriod} leaderboard cache:`,
         error,
       );
       // Keep old cache if refresh fails
@@ -354,11 +405,74 @@ export class UserService {
   }
 
   /**
+   * Get weekly leaderboard data based on current week's running sessions
+   *
+   * @private
+   */
+  private async getWeeklyLeaderboard(): Promise<User[]> {
+    const { start, end } = this.getCurrentWeekRange();
+
+    console.log(
+      `📅 [UserService] Calculating weekly leaderboard for ${start.toISOString()} to ${end.toISOString()}`,
+    );
+
+    // Get all running sessions for the current week
+    const weeklySessionsQuery = `
+      SELECT 
+        u.id,
+        u.fid,
+        u.username,
+        u.pfpUrl,
+        u.createdAt,
+        COALESCE(SUM(rs.distance), 0) as weeklyDistance,
+        COALESCE(COUNT(rs.id), 0) as weeklyRuns,
+        COALESCE(SUM(rs.duration), 0) as weeklyDuration
+      FROM users u
+      LEFT JOIN running_sessions rs ON u.id = rs.userId 
+        AND rs.completedDate >= ? 
+        AND rs.completedDate <= ?
+        AND rs.isWorkoutImage = true
+        AND rs.confidence > 0.3
+      GROUP BY u.id, u.fid, u.username, u.pfpUrl, u.createdAt
+      ORDER BY weeklyDistance DESC, weeklyRuns DESC, u.createdAt ASC
+    `;
+
+    const result = await this.userRepository.query(weeklySessionsQuery, [
+      start.toISOString(),
+      end.toISOString(),
+    ]);
+
+    // Map the raw query results to User objects with additional weekly stats
+    return result.map((row: any) => ({
+      id: row.id,
+      fid: row.fid,
+      username: row.username,
+      pfpUrl: row.pfpUrl,
+      createdAt: row.createdAt,
+      runnerTokens: parseFloat(row.weeklyDistance) || 0, // Use weekly distance as the sorting metric
+      // Store additional weekly stats for potential future use
+      weeklyStats: {
+        distance: parseFloat(row.weeklyDistance) || 0,
+        runs: parseInt(row.weeklyRuns) || 0,
+        duration: parseFloat(row.weeklyDuration) || 0,
+      },
+    }));
+  }
+
+  /**
    * Invalidates the leaderboard cache, forcing a refresh on next request.
    */
-  public invalidateLeaderboardCache(): void {
-    this.leaderboardCache = null;
-    console.log('🔄 [UserService] Leaderboard cache invalidated');
+  public invalidateLeaderboardCache(timePeriod?: 'weekly' | 'all-time'): void {
+    if (timePeriod) {
+      this.leaderboardCache[timePeriod] = null;
+      console.log(
+        `🔄 [UserService] ${timePeriod} leaderboard cache invalidated`,
+      );
+    } else {
+      this.leaderboardCache['all-time'] = null;
+      this.leaderboardCache['weekly'] = null;
+      console.log('🔄 [UserService] All leaderboard caches invalidated');
+    }
   }
 
   /**

@@ -595,6 +595,130 @@ export class TrainingController {
   }
 
   /**
+   * Get personal analytics for user
+   */
+  @Get('/progress/personal-analytics/:fid')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get comprehensive personal analytics for user' })
+  async getPersonalAnalytics(
+    @Param('fid', ParseIntPipe) fid: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const analytics = await this.trainingService.getPersonalAnalytics(fid);
+      return hasResponse(res, analytics);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getPersonalAnalytics',
+          'User not found.',
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getPersonalAnalytics',
+        'Unable to retrieve personal analytics.',
+      );
+    }
+  }
+
+  /**
+   * Get community context for user
+   */
+  @Get('/progress/community-context/:fid')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get community comparison data for user' })
+  async getCommunityContext(
+    @Param('fid', ParseIntPipe) fid: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const context = await this.trainingService.getCommunityContext(fid);
+      return hasResponse(res, context);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getCommunityContext',
+          'User not found.',
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getCommunityContext',
+        'Unable to retrieve community context.',
+      );
+    }
+  }
+
+  /**
+   * Get insights for user
+   */
+  @Get('/progress/insights/:fid')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get data-driven insights and recommendations' })
+  async getInsights(
+    @Param('fid', ParseIntPipe) fid: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const insights = await this.trainingService.getInsights(fid);
+      return hasResponse(res, insights);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getInsights',
+          'User not found.',
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getInsights',
+        'Unable to retrieve insights.',
+      );
+    }
+  }
+
+  /**
+   * Get weekly summary for user
+   */
+  @Get('/progress/weekly-summary/:fid')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({ summary: 'Get weekly performance summary' })
+  async getWeeklySummary(
+    @Param('fid', ParseIntPipe) fid: number,
+    @Res() res: Response,
+  ) {
+    try {
+      const summary = await this.trainingService.getWeeklySummary(fid);
+      return hasResponse(res, summary);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getWeeklySummary',
+          'User not found.',
+        );
+      }
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getWeeklySummary',
+        'Unable to retrieve weekly summary.',
+      );
+    }
+  }
+
+  /**
    * Get leaderboard with aggregated user statistics
    */
   @Get('/leaderboard')
@@ -602,16 +726,20 @@ export class TrainingController {
   @ApiOperation({
     summary: 'Get leaderboard with aggregated user statistics',
     description:
-      'Retrieves user statistics for the leaderboard with sorting and limiting options',
+      'Retrieves user statistics for the leaderboard with sorting and limiting options. Supports weekly and all-time periods.',
   })
   async getLeaderboard(
     @Query('sortBy') sortBy: string = 'totalDistance',
     @Query('limit') limit: string = '50',
+    @Query('timePeriod') timePeriod: string = 'all-time',
     @Res() res: Response,
   ) {
     try {
       console.log('🏃 [TrainingController] Getting leaderboard data');
       const limitNumber = parseInt(limit, 10);
+
+      // Validate timePeriod parameter
+      const validTimePeriod = timePeriod === 'weekly' ? 'weekly' : 'all-time';
 
       // Validate parameters
       const allowedSortBy = ['totalDistance', 'totalWorkouts', 'totalTime'];
@@ -630,6 +758,7 @@ export class TrainingController {
       const leaderboard = await this.trainingService.getLeaderboard(
         sortBy,
         limitNumber,
+        validTimePeriod,
       );
 
       return hasResponse(res, leaderboard);

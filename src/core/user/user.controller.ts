@@ -216,6 +216,7 @@ export class UserController {
    * @param {QuickAuthPayload} session - The authenticated user session from JWT
    * @param {number} page - The page number for pagination
    * @param {number} limit - The number of records per page
+   * @param {string} timePeriod - The time period filter ('weekly' or 'all-time')
    * @param {Response} res - The response object
    * @returns {Promise<Response>} The response containing the fitness leaderboard
    */
@@ -225,16 +226,21 @@ export class UserController {
     @Session() session: QuickAuthPayload,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 50,
+    @Query('timePeriod') timePeriod: string = 'all-time',
     @Res() res: Response,
   ): Promise<Response> {
     try {
       const validatedPage = Math.max(1, Number(page) || 1);
       const validatedLimit = Math.min(100, Math.max(10, Number(limit) || 50));
 
+      // Validate timePeriod parameter
+      const validTimePeriod = timePeriod === 'weekly' ? 'weekly' : 'all-time';
+
       const leaderboard = await this.userService.getFitnessLeaderboard(
         validatedPage,
         validatedLimit,
         session.sub,
+        validTimePeriod,
       );
 
       return hasResponse(res, leaderboard);

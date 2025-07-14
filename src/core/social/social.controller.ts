@@ -16,7 +16,7 @@ import { Response } from 'express';
 import { ApiOperation } from '@nestjs/swagger';
 
 // Services
-import { SocialService } from './services/social.service';
+import { SocialService, WebhookData } from './services/social.service';
 
 // Security
 import { AuthorizationGuard, QuickAuthPayload } from '../../security/guards';
@@ -147,32 +147,44 @@ export class SocialController {
   async getCastWebhook(@Body() webhookData: any, @Res() res: Response) {
     try {
       console.log('📨 Farcaster cast webhook received');
-      console.log('📊 Webhook data:', JSON.stringify(webhookData, null, 2));
 
-      const result = await this.socialService.processCastWebhook(webhookData);
+      // Return 200 immediately to prevent duplicate webhook processing
+      hasResponse(res, { message: 'Webhook received' });
 
-      if (result.success) {
-        console.log('✅ Webhook processed successfully');
-        return hasResponse(res, {
-          message: 'Webhook processed successfully',
-          result: result,
-        });
-      } else {
-        console.error('❌ Webhook processing failed:', result.error);
-        return hasError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          'getCastWebhook',
-          result.error || 'Failed to process webhook',
-        );
-      }
+      // Process webhook in background without awaiting
+      setImmediate(async () => {
+        try {
+          console.log(
+            '📊 Processing webhook data:',
+            JSON.stringify(webhookData, null, 2),
+          );
+          const result =
+            await this.socialService.processCastWebhook(webhookData);
+
+          if (result.success) {
+            if (result.duplicate) {
+              console.log('⚠️  Duplicate webhook detected - already processed');
+            } else if (result.isReply) {
+              console.log(
+                '📝 Reply cast filtered - only processing root casts',
+              );
+            } else {
+              console.log('✅ Webhook processed successfully');
+            }
+          } else {
+            console.error('❌ Webhook processing failed:', result.error);
+          }
+        } catch (error) {
+          console.error('❌ Error processing webhook in background:', error);
+        }
+      });
     } catch (error) {
-      console.error('❌ Error processing webhook:', error);
+      console.error('❌ Error receiving webhook:', error);
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getCastWebhook',
-        'Internal server error processing webhook',
+        'Internal server error receiving webhook',
       );
     }
   }
@@ -187,66 +199,67 @@ export class SocialController {
       'Processes casts that contain specific embed URLs (e.g., running app screenshots)',
   })
   async getCastWebhookWithEmbedFilter(
-    @Body() webhookData: any,
+    @Body() webhookData: WebhookData,
     @Res() res: Response,
   ) {
     try {
       console.log('📨 Farcaster cast webhook with embed filter received');
 
-      // Check if the cast contains image embeds
-      const castData =
-        this.socialService.extractCastDataFromWebhook(webhookData);
-      if (!castData) {
-        return hasError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          'getCastWebhookWithEmbedFilter',
-          'Invalid webhook data format',
-        );
-      }
+      // Return 200 immediately to prevent duplicate webhook processing
+      hasResponse(res, { message: 'Webhook received' });
 
-      const hasImageEmbeds = castData.embeds.some(
-        (embed) =>
-          embed.url &&
-          (embed.url.includes('imagedelivery.net') ||
-            embed.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ||
-            (embed.metadata &&
-              embed.metadata.content_type &&
-              embed.metadata.content_type.startsWith('image/'))),
-      );
+      // Process webhook in background without awaiting
+      setImmediate(async () => {
+        try {
+          // Check if the cast contains image embeds
+          const castData = webhookData.data;
+          if (!castData) {
+            console.error('❌ Invalid webhook data format');
+            return;
+          }
 
-      if (!hasImageEmbeds) {
-        console.log('📝 Cast has no image embeds, skipping processing');
-        return hasResponse(res, {
-          message: 'Cast has no image embeds, skipping processing',
-          processed: false,
-        });
-      }
+          const hasImageEmbeds = castData.embeds.some(
+            (embed) =>
+              embed.url &&
+              (embed.url.includes('imagedelivery.net') ||
+                embed.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ||
+                (embed.metadata &&
+                  embed.metadata.content_type &&
+                  embed.metadata.content_type.startsWith('image/'))),
+          );
 
-      const result = await this.socialService.processCastWebhook(webhookData);
+          if (!hasImageEmbeds) {
+            console.log('📝 Cast has no image embeds, skipping processing');
+            return;
+          }
 
-      if (result.success) {
-        console.log('✅ Webhook processed successfully');
-        return hasResponse(res, {
-          message: 'Webhook processed successfully',
-          result: result,
-        });
-      } else {
-        console.error('❌ Webhook processing failed:', result.error);
-        return hasError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          'getCastWebhookWithEmbedFilter',
-          result.error || 'Failed to process webhook',
-        );
-      }
+          const result =
+            await this.socialService.processCastWebhook(webhookData);
+
+          if (result.success) {
+            if (result.duplicate) {
+              console.log('⚠️  Duplicate webhook detected - already processed');
+            } else if (result.isReply) {
+              console.log(
+                '📝 Reply cast filtered - only processing root casts',
+              );
+            } else {
+              console.log('✅ Webhook processed successfully');
+            }
+          } else {
+            console.error('❌ Webhook processing failed:', result.error);
+          }
+        } catch (error) {
+          console.error('❌ Error processing webhook in background:', error);
+        }
+      });
     } catch (error) {
-      console.error('❌ Error processing webhook:', error);
+      console.error('❌ Error receiving webhook:', error);
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getCastWebhookWithEmbedFilter',
-        'Internal server error processing webhook',
+        'Internal server error receiving webhook',
       );
     }
   }
@@ -261,62 +274,62 @@ export class SocialController {
       'Processes casts from specific FIDs (useful for testing with known users)',
   })
   async getCastWebhookForSpecificUsers(
-    @Body() webhookData: any,
+    @Body() webhookData: WebhookData,
     @Res() res: Response,
   ) {
     try {
       console.log('📨 Farcaster cast webhook for specific users received');
 
-      // Extract cast data
-      const castData =
-        this.socialService.extractCastDataFromWebhook(webhookData);
-      if (!castData) {
-        return hasError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          'getCastWebhookForSpecificUsers',
-          'Invalid webhook data format',
-        );
-      }
+      // Return 200 immediately to prevent duplicate webhook processing
+      hasResponse(res, { message: 'Webhook received' });
 
-      // Define allowed FIDs (you can make this configurable)
-      const allowedFids = [194, 1234, 5678]; // Example FIDs
+      // Process webhook in background without awaiting
+      setImmediate(async () => {
+        try {
+          // Extract cast data
+          const castData = webhookData.data;
+          if (!castData) {
+            console.error('❌ Invalid webhook data format');
+            return;
+          }
 
-      if (!allowedFids.includes(castData.author.fid)) {
-        console.log(
-          `📝 Cast from FID ${castData.author.fid} not in allowed list, skipping`,
-        );
-        return hasResponse(res, {
-          message: 'Cast from user not in allowed list, skipping processing',
-          processed: false,
-          fid: castData.author.fid,
-        });
-      }
+          // Define allowed FIDs (you can make this configurable)
+          const allowedFids = [194, 1234, 5678]; // Example FIDs
 
-      const result = await this.socialService.processCastWebhook(webhookData);
+          if (!allowedFids.includes(castData.author.fid)) {
+            console.log(
+              `📝 Cast from FID ${castData.author.fid} not in allowed list, skipping`,
+            );
+            return;
+          }
 
-      if (result.success) {
-        console.log('✅ Webhook processed successfully');
-        return hasResponse(res, {
-          message: 'Webhook processed successfully',
-          result: result,
-        });
-      } else {
-        console.error('❌ Webhook processing failed:', result.error);
-        return hasError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          'getCastWebhookForSpecificUsers',
-          result.error || 'Failed to process webhook',
-        );
-      }
+          const result =
+            await this.socialService.processCastWebhook(webhookData);
+
+          if (result.success) {
+            if (result.duplicate) {
+              console.log('⚠️  Duplicate webhook detected - already processed');
+            } else if (result.isReply) {
+              console.log(
+                '📝 Reply cast filtered - only processing root casts',
+              );
+            } else {
+              console.log('✅ Webhook processed successfully');
+            }
+          } else {
+            console.error('❌ Webhook processing failed:', result.error);
+          }
+        } catch (error) {
+          console.error('❌ Error processing webhook in background:', error);
+        }
+      });
     } catch (error) {
-      console.error('❌ Error processing webhook:', error);
+      console.error('❌ Error receiving webhook:', error);
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getCastWebhookForSpecificUsers',
-        'Internal server error processing webhook',
+        'Internal server error receiving webhook',
       );
     }
   }
