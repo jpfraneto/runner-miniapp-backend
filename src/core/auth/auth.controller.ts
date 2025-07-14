@@ -1,13 +1,5 @@
 // Dependencies
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
@@ -49,16 +41,15 @@ export class AuthController {
    * It leverages Farcaster's QuickAuth system where users are always authenticated
    * within the miniapp context, eliminating the need for separate login flows.
    *
-   * The endpoint handles:
-   * 1. QuickAuth JWT token validation (via AuthorizationGuard)
-   * 2. User lookup by FID from the verified token payload
-   * 3. Automatic user record creation for first-time users
-   * 4. Profile updates when user data is provided
-   * 5. Running statistics for UI state management
+   * The endpoint returns runner profile data including:
+   * - Total stats (distance, runs, time, streaks)
+   * - Weekly statistics for the last 10 weeks
+   * - Recent runs (last 10-20 runs)
+   * - User profile information
    *
    * @param session - Verified QuickAuth JWT payload containing user FID and address
    * @param res - HTTP response object
-   * @returns User profile data including running stats, points, and onboarding state
+   * @returns Runner profile data in the format expected by the frontend
    */
   @Get('/me')
   @UseGuards(AuthorizationGuard)
@@ -66,7 +57,7 @@ export class AuthController {
     try {
       logger.log('Processing user profile request for FID:', session.sub);
 
-      // Existing user lookup logic - don't change
+      // Ensure user exists (create if necessary)
       let user = await this.userService.getByFid(session.sub, [
         'id',
         'fid',
@@ -81,47 +72,30 @@ export class AuthController {
         'updatedAt',
       ]);
 
-      let isNewUser = false;
-
       if (!user) {
-        // Existing user creation logic - don't change
+        // Create new user if doesn't exist
         logger.log('Creating new user record for FID:', session.sub);
         const neynar = new NeynarService();
         const neynarUser = await neynar.getUserByFid(session.sub);
 
-        const { user: newUser, isCreated } = await this.userService.upsert(
-          session.sub,
-          {
-            username: neynarUser.username,
-            pfpUrl: neynarUser.pfp_url,
-            runnerTokens: 0,
-            totalRuns: 0,
-            totalDistance: 0,
-            currentStreak: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        );
+        const { user: newUser } = await this.userService.upsert(session.sub, {
+          username: neynarUser.username,
+          pfpUrl: neynarUser.pfp_url,
+          runnerTokens: 0,
+          totalRuns: 0,
+          totalDistance: 0,
+          currentStreak: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
 
         user = newUser;
-        isNewUser = isCreated;
       }
 
-      // Response format for running app
-      const responseData = {
-        fid: user.fid.toString(),
-        username: user.username,
-        pfpUrl: user.pfpUrl,
-        runnerTokens: user.runnerTokens,
-        totalRuns: user.totalRuns,
-        totalDistance: user.totalDistance,
-        currentStreak: user.currentStreak,
-        currentGoal: user.currentGoal,
-        createdAt: user.createdAt,
-        isNewUser,
-      };
+      // Get runner profile data in the format expected by frontend
+      const runnerProfile = await this.userService.getRunnerProfile(user.fid);
 
-      return hasResponse(res, responseData);
+      return hasResponse(res, runnerProfile);
     } catch (error) {
       logger.error('Failed to process user profile request:', error);
       return hasError(

@@ -245,7 +245,8 @@ export class SocialService {
           success: true,
           processed: false,
           concurrent: true,
-          message: 'Cast is currently being processed - concurrent webhook ignored',
+          message:
+            'Cast is currently being processed - concurrent webhook ignored',
           castHash: castHash,
         };
       }
@@ -299,7 +300,10 @@ export class SocialService {
               `🔍 THE BOT REPLIED WITH HASH: ${replyHash?.replyHash || replyHash}`,
             );
           } catch (error) {
-            console.error(`❌ Failed to send reply to cast ${castHash}:`, error);
+            console.error(
+              `❌ Failed to send reply to cast ${castHash}:`,
+              error,
+            );
             // Don't remove from replied cache on failure to prevent infinite retries
             // The cast will remain marked as "replied to" to prevent spam
           }

@@ -2,10 +2,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import OpenAI from 'openai';
 
 // Models
 import { User, UserRoleEnum } from '../../../models';
 import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
+
+// Utils
+import NeynarService from '../../../utils/neynar';
 
 /**
  * Interface for leaderboard response with user position info
@@ -53,12 +57,21 @@ export class UserService {
    */
   private readonly CACHE_TTL = 15 * 60 * 1000;
 
+  /**
+   * OpenAI client for AI-powered features
+   */
+  private openai: OpenAI;
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(RunningSession)
     private readonly runningSessionRepository: Repository<RunningSession>,
-  ) {}
+  ) {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
 
   /**
    * Retrieves a user by their Farcaster ID with optional selected fields and relations.
@@ -146,6 +159,261 @@ export class UserService {
     await this.userRepository.save(user);
 
     return user;
+  }
+
+  /**
+   * Updates a user's goal by their FID.
+   *
+   * @param {User['fid']} fid - The Farcaster ID of the user to update.
+   * @param {string} goal - The goal to set for the user.
+   * @param {'preset' | 'custom'} goalType - The type of goal being set.
+   * @returns {Promise<User>} The updated user entity.
+   * @throws {Error} If the user with the specified FID is not found.
+   */
+  async updateGoal(fid: User['fid'], goal: string, goalType: 'preset' | 'custom'): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: {
+        fid,
+      },
+    });
+
+    if (!user) {
+      throw new Error(`User with FID ${fid} not found.`);
+    }
+
+    // Update the goal and mark user as having an active training plan
+    Object.assign(user, {
+      currentGoal: goal,
+      hasActiveTrainingPlan: true,
+    });
+
+    await this.userRepository.save(user);
+
+    console.log(`✅ [UserService] Updated goal for user ${user.username} (FID: ${fid}): ${goal}`);
+    return user;
+  }
+
+  /**
+   * Gets a user's current goal by their FID.
+   *
+   * @param {User['fid']} fid - The Farcaster ID of the user.
+   * @returns {Promise<string | null>} The user's current goal or null if not set.
+   * @throws {Error} If the user with the specified FID is not found.
+   */
+  async getUserGoal(fid: User['fid']): Promise<string | null> {
+    const user = await this.userRepository.findOne({
+      where: {
+        fid,
+      },
+      select: ['currentGoal'],
+    });
+
+    if (!user) {
+      throw new Error(`User with FID ${fid} not found.`);
+    }
+
+    return user.currentGoal;
+  }
+
+  /**
+   * Generates a personalized training plan using AI based on user's goal and current fitness level.
+   *
+   * @param {User['fid']} fid - The Farcaster ID of the user.
+   * @param {string} goal - The user's goal (e.g., "5k", "10k", "21k", "42k", or custom text).
+   * @param {'preset' | 'custom'} goalType - The type of goal being set.
+   * @returns {Promise<any>} The generated training plan from AI.
+   * @throws {Error} If the user with the specified FID is not found or AI generation fails.
+   */
+  async generateTrainingPlan(fid: User['fid'], goal: string, goalType: 'preset' | 'custom'): Promise<any> {
+    const user = await this.userRepository.findOne({
+      where: {
+        fid,
+      },
+      relations: ['runningSessions'],
+    });
+
+    if (!user) {
+      throw new Error(`User with FID ${fid} not found.`);
+    }
+
+    // Get user's recent running history for context
+    const recentSessions = await this.runningSessionRepository.find({
+      where: { user: { fid } },
+      order: { createdAt: 'DESC' },
+      take: 10,
+    });
+
+    // Build user context for AI
+    const userContext = {
+      currentLevel: user.fitnessLevel,
+      totalRuns: user.totalRuns,
+      totalDistance: user.totalDistance,
+      averageWeeklyRuns: user.preferredWeeklyFrequency,
+      recentRunsCount: recentSessions.length,
+      averageDistance: recentSessions.length > 0 ? 
+        recentSessions.reduce((sum, session) => sum + (session.distance || 0), 0) / recentSessions.length : 0,
+    };
+
+    const prompt = this.buildTrainingPlanPrompt(goal, goalType, userContext);
+
+    try {
+      console.log(`🤖 [UserService] Generating training plan for user ${user.username} (FID: ${fid})`);
+      console.log(`🎯 Goal: ${goal} (${goalType})`);
+      console.log(`📊 User context:`, userContext);
+
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert running coach and training plan specialist. You create personalized, safe, and effective training plans for runners of all levels.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      const aiResponse = completion.choices[0]?.message?.content;
+      if (!aiResponse) {
+        throw new Error('Failed to generate training plan - no response from AI');
+      }
+
+      // Try to parse JSON response
+      let trainingPlan;
+      try {
+        trainingPlan = JSON.parse(aiResponse);
+      } catch (parseError) {
+        console.error('❌ [UserService] Failed to parse AI response as JSON:', parseError);
+        // If JSON parsing fails, return a structured version of the text response
+        trainingPlan = {
+          goal,
+          goalType,
+          generatedAt: new Date().toISOString(),
+          plan: aiResponse,
+          userLevel: user.fitnessLevel,
+          estimatedWeeks: this.estimateTrainingWeeks(goal, goalType),
+        };
+      }
+
+      console.log(`✅ [UserService] Generated training plan for user ${user.username}`);
+      return trainingPlan;
+    } catch (error) {
+      console.error('❌ [UserService] Error generating training plan:', error);
+      throw new Error(`Failed to generate training plan: ${error.message}`);
+    }
+  }
+
+  /**
+   * Builds a comprehensive prompt for AI training plan generation.
+   *
+   * @param {string} goal - The user's goal.
+   * @param {'preset' | 'custom'} goalType - The type of goal.
+   * @param {any} userContext - User's current fitness context.
+   * @returns {string} The formatted prompt for AI.
+   */
+  private buildTrainingPlanPrompt(goal: string, goalType: 'preset' | 'custom', userContext: any): string {
+    const basePrompt = `
+Please create a personalized training plan for a runner with the following details:
+
+GOAL: ${goal} (${goalType === 'preset' ? 'Standard distance' : 'Custom goal'})
+
+CURRENT FITNESS LEVEL:
+- Experience Level: ${userContext.currentLevel}
+- Total Runs Completed: ${userContext.totalRuns}
+- Total Distance Covered: ${userContext.totalDistance} km
+- Preferred Weekly Frequency: ${userContext.averageWeeklyRuns} runs per week
+- Recent Activity: ${userContext.recentRunsCount} runs in recent history
+- Average Distance per Run: ${userContext.averageDistance.toFixed(2)} km
+
+REQUIREMENTS:
+1. Create a progressive training plan that safely builds toward the goal
+2. Include appropriate warmup, main workout, and cooldown phases
+3. Consider injury prevention and recovery
+4. Provide weekly structure with specific workouts
+5. Include different types of runs (easy, tempo, intervals, long runs)
+6. Adapt to the user's current fitness level and experience
+
+RESPONSE FORMAT:
+Please respond with a JSON object containing:
+{
+  "goal": "${goal}",
+  "goalType": "${goalType}",
+  "estimatedWeeks": number,
+  "trainingPhases": [
+    {
+      "phase": "Base Building/Speed Work/Peak/Taper",
+      "weeks": number,
+      "description": "Phase description",
+      "weeklyStructure": {
+        "totalRuns": number,
+        "totalDistance": number,
+        "keyWorkouts": ["description of key workouts"]
+      }
+    }
+  ],
+  "weeklySchedule": {
+    "monday": "Rest or Cross-training",
+    "tuesday": "Workout type and description",
+    "wednesday": "Workout type and description",
+    "thursday": "Workout type and description",
+    "friday": "Rest or Easy run",
+    "saturday": "Long run or Key workout",
+    "sunday": "Recovery run or Rest"
+  },
+  "keyPrinciples": [
+    "Important training principles for this goal"
+  ],
+  "progressionTips": [
+    "How to progress safely"
+  ],
+  "injuryPrevention": [
+    "Key injury prevention strategies"
+  ],
+  "nutritionTips": [
+    "Basic nutrition guidelines for this goal"
+  ]
+}
+
+Make sure the plan is:
+- Appropriate for a ${userContext.currentLevel} runner
+- Progressive and safe
+- Specific to achieving the goal: ${goal}
+- Realistic given their current fitness level
+- Includes variety to prevent boredom
+- Emphasizes consistency over intensity for beginners
+`;
+
+    return basePrompt;
+  }
+
+  /**
+   * Estimates training duration based on goal type.
+   *
+   * @param {string} goal - The user's goal.
+   * @param {'preset' | 'custom'} goalType - The type of goal.
+   * @returns {number} Estimated weeks for training.
+   */
+  private estimateTrainingWeeks(goal: string, goalType: 'preset' | 'custom'): number {
+    if (goalType === 'preset') {
+      switch (goal) {
+        case '5k':
+          return 8;
+        case '10k':
+          return 12;
+        case '21k':
+          return 16;
+        case '42k':
+          return 20;
+        default:
+          return 12;
+      }
+    }
+    // For custom goals, provide a default estimate
+    return 12;
   }
 
   /**
@@ -672,6 +940,393 @@ export class UserService {
     return Object.keys(distanceCategories).reduce((a, b) =>
       distanceCategories[a] > distanceCategories[b] ? a : b,
     );
+  }
+
+  /**
+   * Gets runner profile data in the format expected by the frontend
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @returns {Promise<{
+   *   totalDistance: number;
+   *   totalRuns: number;
+   *   totalTimeMinutes: number;
+   *   currentStreak: number;
+   *   longestStreak: number;
+   *   averagePace: string;
+   *   weeklyStats: Array<{ week: string; distance: number }>;
+   *   recentRuns: RunningSession[];
+   * }>} User's runner profile data
+   */
+  async getRunnerProfile(fid: number): Promise<{
+    totalDistance: number;
+    totalRuns: number;
+    totalTimeMinutes: number;
+    currentStreak: number;
+    longestStreak: number;
+    averagePace: string;
+    weeklyStats: Array<{ week: string; distance: number }>;
+    recentRuns: RunningSession[];
+  }> {
+    // Get user to access stored stats
+    const user = await this.userRepository.findOne({
+      where: { fid },
+      select: [
+        'totalDistance',
+        'totalRuns',
+        'currentStreak',
+        'totalTimeMinutes',
+      ],
+    });
+
+    // Get all user's running sessions for calculations
+    const allSessions = await this.runningSessionRepository
+      .createQueryBuilder('rs')
+      .leftJoinAndSelect('rs.user', 'user')
+      .where('rs.fid = :fid', { fid })
+      .andWhere('rs.isWorkoutImage = true')
+      .andWhere('rs.confidence > 0.3')
+      .orderBy('rs.completedDate', 'DESC')
+      .getMany();
+
+    // Calculate total time in minutes from sessions (more accurate than stored value)
+    const totalTimeMinutes = allSessions.reduce(
+      (sum, session) => sum + session.duration,
+      0,
+    );
+
+    // Calculate average pace
+    const totalDistance = allSessions.reduce(
+      (sum, session) => sum + Number(session.distance),
+      0,
+    );
+    const averagePace = this.calculateAveragePace(
+      totalDistance,
+      totalTimeMinutes,
+    );
+
+    // Calculate longest streak (simplified - would need more complex logic for accurate calculation)
+    const longestStreak = await this.calculateLongestStreak(fid);
+
+    // Get weekly stats for last 10 weeks
+    const weeklyStats = await this.getWeeklyStatsForProfile(fid);
+
+    // Get recent runs (last 15 runs)
+    const recentRuns = allSessions.slice(0, 15);
+
+    return {
+      totalDistance: user?.totalDistance || totalDistance,
+      totalRuns: user?.totalRuns || allSessions.length,
+      totalTimeMinutes,
+      currentStreak: user?.currentStreak || 0,
+      longestStreak,
+      averagePace,
+      weeklyStats,
+      recentRuns,
+    };
+  }
+
+  /**
+   * Gets weekly stats for the last 10 weeks in the format expected by frontend
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @returns {Promise<Array<{ week: string; distance: number }>>} Weekly stats
+   */
+  private async getWeeklyStatsForProfile(
+    fid: number,
+  ): Promise<Array<{ week: string; distance: number }>> {
+    const currentDate = new Date();
+    const weeklyStats: Array<{ week: string; distance: number }> = [];
+
+    // Generate data for last 10 weeks
+    for (let i = 0; i < 10; i++) {
+      const weekStart = new Date(currentDate);
+      const dayOfWeek = weekStart.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+      // Go back to the start of the week (Monday) and then go back i more weeks
+      weekStart.setDate(weekStart.getDate() - daysToMonday - i * 7);
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      // Query for this week's distance
+      const weeklySessionsQuery = `
+        SELECT COALESCE(SUM(rs.distance), 0) as totalDistance
+        FROM running_sessions rs
+        WHERE rs.fid = ? 
+          AND rs.completedDate >= ? 
+          AND rs.completedDate <= ?
+          AND rs.isWorkoutImage = true
+          AND rs.confidence > 0.3
+      `;
+
+      const result = await this.runningSessionRepository.query(
+        weeklySessionsQuery,
+        [fid, weekStart.toISOString(), weekEnd.toISOString()],
+      );
+
+      const distance = parseFloat(result[0]?.totalDistance) || 0;
+
+      // Format week identifier (W1 = current week, W2 = last week, etc.)
+      const weekIdentifier = i === 0 ? 'W1' : `W${i + 1}`;
+
+      weeklyStats.push({
+        week: weekIdentifier,
+        distance,
+      });
+    }
+
+    return weeklyStats;
+  }
+
+  /**
+   * Calculates the longest streak for a user (simplified implementation)
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @returns {Promise<number>} Longest streak in days
+   */
+  private async calculateLongestStreak(fid: number): Promise<number> {
+    // Get all sessions ordered by date
+    const sessions = await this.runningSessionRepository
+      .createQueryBuilder('rs')
+      .where('rs.fid = :fid', { fid })
+      .andWhere('rs.isWorkoutImage = true')
+      .andWhere('rs.confidence > 0.3')
+      .orderBy('rs.completedDate', 'ASC')
+      .select(['rs.completedDate'])
+      .getMany();
+
+    if (sessions.length === 0) return 0;
+
+    let longestStreak = 1;
+    let currentStreak = 1;
+    let lastDate = new Date(sessions[0].completedDate);
+
+    for (let i = 1; i < sessions.length; i++) {
+      const currentDate = new Date(sessions[i].completedDate);
+      const daysDifference = Math.floor(
+        (currentDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      if (daysDifference === 1) {
+        // Consecutive day
+        currentStreak++;
+        longestStreak = Math.max(longestStreak, currentStreak);
+      } else if (daysDifference === 0) {
+        // Same day, don't change streak
+        continue;
+      } else {
+        // Gap in days, reset streak
+        currentStreak = 1;
+      }
+
+      lastDate = currentDate;
+    }
+
+    return longestStreak;
+  }
+
+  /**
+   * Gets user's weekly kilometers for the last N weeks with pagination
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Number of weeks per page (default: 12)
+   * @returns {Promise<{
+   *   weeklyKilometers: Array<{
+   *     weekStartDate: string;
+   *     weekEndDate: string;
+   *     totalDistance: number;
+   *     totalRuns: number;
+   *     totalDuration: number;
+   *   }>;
+   *   pagination: {
+   *     page: number;
+   *     limit: number;
+   *     total: number;
+   *     totalPages: number;
+   *     hasNext: boolean;
+   *     hasPrev: boolean;
+   *   };
+   * }>} User's weekly kilometers data with pagination
+   */
+  async getWeeklyKilometers(
+    fid: number,
+    page: number = 1,
+    limit: number = 12,
+  ): Promise<{
+    weeklyKilometers: Array<{
+      weekStartDate: string;
+      weekEndDate: string;
+      totalDistance: number;
+      totalRuns: number;
+      totalDuration: number;
+    }>;
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+      hasNext: boolean;
+      hasPrev: boolean;
+    };
+  }> {
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit;
+
+    // Get the current date and calculate how many weeks back to go
+    const currentDate = new Date();
+    const totalWeeksToFetch = offset + limit;
+
+    // Generate array of week ranges starting from current week and going backwards
+    const weekRanges: Array<{ start: Date; end: Date }> = [];
+    for (let i = 0; i < totalWeeksToFetch; i++) {
+      const weekStart = new Date(currentDate);
+      const dayOfWeek = weekStart.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+      // Go back to the start of the week (Monday) and then go back i more weeks
+      weekStart.setDate(weekStart.getDate() - daysToMonday - i * 7);
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      weekRanges.push({ start: weekStart, end: weekEnd });
+    }
+
+    // Get paginated week ranges
+    const paginatedWeeks = weekRanges.slice(offset, offset + limit);
+
+    // Calculate weekly data for each week
+    const weeklyKilometers = await Promise.all(
+      paginatedWeeks.map(async ({ start, end }) => {
+        const weeklySessionsQuery = `
+          SELECT 
+            COALESCE(SUM(rs.distance), 0) as totalDistance,
+            COALESCE(COUNT(rs.id), 0) as totalRuns,
+            COALESCE(SUM(rs.duration), 0) as totalDuration
+          FROM running_sessions rs
+          WHERE rs.fid = ? 
+            AND rs.completedDate >= ? 
+            AND rs.completedDate <= ?
+            AND rs.isWorkoutImage = true
+            AND rs.confidence > 0.3
+        `;
+
+        const result = await this.runningSessionRepository.query(
+          weeklySessionsQuery,
+          [fid, start.toISOString(), end.toISOString()],
+        );
+
+        const row = result[0] || {};
+
+        return {
+          weekStartDate: start.toISOString().split('T')[0],
+          weekEndDate: end.toISOString().split('T')[0],
+          totalDistance: parseFloat(row.totalDistance) || 0,
+          totalRuns: parseInt(row.totalRuns) || 0,
+          totalDuration: parseFloat(row.totalDuration) || 0,
+        };
+      }),
+    );
+
+    // For pagination, we'll use a reasonable maximum number of weeks (e.g., 52 weeks = 1 year)
+    // In a real application, you might want to calculate this based on user's registration date
+    const maxWeeks = 52;
+    const totalPages = Math.ceil(maxWeeks / limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
+
+    return {
+      weeklyKilometers,
+      pagination: {
+        page,
+        limit,
+        total: maxWeeks,
+        totalPages,
+        hasNext,
+        hasPrev,
+      },
+    };
+  }
+
+  /**
+   * Creates a user from Neynar data when they don't exist in the database
+   *
+   * @param {number} fid - The Farcaster ID of the user to create
+   * @returns {Promise<User>} The created user
+   */
+  async createUserFromNeynar(fid: number): Promise<User> {
+    try {
+      console.log(`🔍 [UserService] Creating user from Neynar for FID: ${fid}`);
+
+      const neynar = new NeynarService();
+      const { user: neynarUser, isChannelMember } =
+        await neynar.getUserWithChannelMembership(fid);
+
+      console.log(
+        `📊 [UserService] Neynar user data - Username: ${neynarUser.username}, Channel member: ${isChannelMember}`,
+      );
+
+      const { user: newUser } = await this.upsert(fid, {
+        username: neynarUser.username,
+        pfpUrl: neynarUser.pfp_url,
+        runnerTokens: 0,
+        totalRuns: 0,
+        totalDistance: 0,
+        currentStreak: 0,
+        // Store channel membership status (could be useful for future features)
+        // Note: Add this field to User model if you want to track it
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      console.log(
+        `✅ [UserService] Successfully created user ${newUser.username} (FID: ${fid})`,
+      );
+
+      return newUser;
+    } catch (error) {
+      console.error(
+        `❌ [UserService] Error creating user from Neynar for FID ${fid}:`,
+        error,
+      );
+      throw new Error(`Failed to create user from Neynar: ${error.message}`);
+    }
+  }
+
+  /**
+   * Gets a user by FID, creating from Neynar if they don't exist
+   *
+   * @param {number} fid - The Farcaster ID of the user
+   * @param {(keyof User)[]} [select=[]] - Optional array of fields to select
+   * @param {(keyof User)[]} [relations=[]] - Optional array of relations to include
+   * @returns {Promise<User>} The user entity
+   */
+  async getOrCreateUserByFid(
+    fid: number,
+    select: (keyof User)[] = [],
+    relations: (keyof User)[] = [],
+  ): Promise<User> {
+    let user = await this.getByFid(fid, select, relations);
+
+    if (!user) {
+      console.log(
+        `👤 [UserService] User not found, creating from Neynar for FID: ${fid}`,
+      );
+      user = await this.createUserFromNeynar(fid);
+
+      // If specific fields were requested, fetch the user again with those fields
+      if (select.length > 0 || relations.length > 0) {
+        user = await this.getByFid(fid, select, relations);
+      }
+    }
+
+    return user;
   }
 
   /**

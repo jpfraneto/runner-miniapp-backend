@@ -255,23 +255,24 @@ export class TrainingService {
    */
   private getCurrentWeekRange(): { start: Date; end: Date } {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Get the current day of the week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-    const currentDay = today.getDay();
+    // Get start of current week (Monday) in UTC
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getUTCDay();
+    const diff = startOfWeek.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    startOfWeek.setUTCDate(diff);
+    startOfWeek.setUTCHours(0, 0, 0, 0);
 
-    // Calculate days since Monday (Monday = 0, Tuesday = 1, ..., Sunday = 6)
-    const daysSinceMonday = currentDay === 0 ? 6 : currentDay - 1;
-
-    // Calculate the start of the week (Monday)
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - daysSinceMonday);
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    // Calculate the end of the week (Sunday)
+    // Get end of current week (Sunday) in UTC
     const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
+    endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
+    endOfWeek.setUTCHours(23, 59, 59, 999);
+
+    console.log('🔍 [UTC Week Range]', {
+      start: startOfWeek.toISOString(),
+      end: endOfWeek.toISOString(),
+      currentTime: now.toISOString(),
+    });
 
     return { start: startOfWeek, end: endOfWeek };
   }
@@ -527,14 +528,9 @@ export class TrainingService {
       .addSelect('AVG(session.distance)', 'avgDistance')
       .addSelect('MAX(session.distance)', 'bestDistance')
       .addSelect('MAX(session.duration)', 'bestTime')
-      .innerJoin('session.user', 'user')
-      .where(
-        'session.isWorkoutImage = :isWorkout AND session.confidence > :confidence',
-        {
-          isWorkout: true,
-          confidence: 0.3,
-        },
-      )
+      .leftJoin('session.user', 'user') // Changed from INNER JOIN to LEFT JOIN
+      .where('session.isWorkoutImage = :isWorkout', { isWorkout: true })
+      // Removed the confidence filter to match getRecentWorkouts behavior
       .groupBy('session.fid')
       .addGroupBy('user.username')
       .addGroupBy('user.pfpUrl')
@@ -566,22 +562,46 @@ export class TrainingService {
 
     queryBuilder.orderBy(sortField, 'DESC').limit(limit);
 
+    console.log('🔍 [Leaderboard Query]', queryBuilder.getQuery());
+    console.log('🔍 [Leaderboard Params]', queryBuilder.getParameters());
+
+    // First, let's check what sessions exist in this time period
+    const debugQuery = this.runningSessionRepository
+      .createQueryBuilder('session')
+      .select([
+        'session.fid',
+        'session.completedDate',
+        'session.distance',
+        'session.isWorkoutImage',
+      ])
+      .where('session.isWorkoutImage = :isWorkout', { isWorkout: true });
+
+    // Only add time filter if we have one
+    if (timePeriod === 'weekly' && whereCondition) {
+      debugQuery.andWhere(whereCondition, {
+        startDate: whereParams[0],
+        endDate: whereParams[1],
+      });
+    }
+
+    const debugSessions = await debugQuery.getMany();
+
+    console.log('🔍 [Debug Sessions in Period]', debugSessions.length);
+    console.log('🔍 [Debug Sessions Data]', debugSessions);
+
     const rawResults = await queryBuilder.getRawMany();
+
+    console.log('🔍 [Raw Results Count]', rawResults.length);
+    console.log('🔍 [All Raw Results]', rawResults);
 
     // Get total count of users with workouts
     const totalUsersQuery = this.runningSessionRepository
       .createQueryBuilder('session')
       .select('COUNT(DISTINCT session.fid)', 'count')
-      .where(
-        'session.fid IS NOT NULL AND session.isWorkoutImage = :isWorkout AND session.confidence > :confidence',
-        {
-          isWorkout: true,
-          confidence: 0.3,
-        },
-      );
+      .where('session.isWorkoutImage = :isWorkout', { isWorkout: true });
 
     // Apply time period filter to total count as well
-    if (timePeriod === 'weekly') {
+    if (timePeriod === 'weekly' && whereCondition) {
       totalUsersQuery.andWhere(whereCondition, {
         startDate: whereParams[0],
         endDate: whereParams[1],
@@ -590,6 +610,8 @@ export class TrainingService {
 
     const totalUsersResult = await totalUsersQuery.getRawOne();
     const totalUsers = parseInt(totalUsersResult.count, 10);
+
+    console.log('🔍 [Total Users]', totalUsers);
 
     // Process results and calculate additional metrics
     const processedData = rawResults.map((row, index) => {
@@ -1234,9 +1256,7 @@ export class TrainingService {
     const bestRun =
       weekSessions.length > 0
         ? weekSessions.reduce((best, session) =>
-            Number(session.distance) > Number(best.distance)
-              ? session
-              : best,
+            Number(session.distance) > Number(best.distance) ? session : best,
           )
         : null;
 

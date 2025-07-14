@@ -40,6 +40,7 @@ export class UserController {
 
   /**
    * Retrieves a user by their FID with their last 10 training sessions.
+   * If the user doesn't exist, creates them from Neynar data.
    *
    * @param {User['fid']} fid - The Farcaster ID of the user to retrieve.
    * @returns {Promise<User>} The user with the specified FID and recent sessions.
@@ -47,17 +48,12 @@ export class UserController {
   @Get('/user/:fid')
   async getUserById(@Param('fid') fid: User['fid'], @Res() res: Response) {
     try {
-      const user = await this.userService.getByFid(fid);
-      if (!user) {
-        return hasError(
-          res,
-          HttpStatus.NOT_FOUND,
-          'getUserById',
-          'User not found',
-        );
-      }
+      console.log(`🔍 [UserController] Getting user by FID: ${fid}`);
 
-      // Get user's last 10 training sessions
+      // Get or create user from Neynar if they don't exist
+      const user = await this.userService.getOrCreateUserByFid(fid);
+
+      // Get user's last 50 training sessions (increased from 10 as per current code)
       const recentSessions = await this.userService.getWorkoutHistory(
         fid,
         1,
@@ -68,6 +64,10 @@ export class UserController {
         user,
         data: recentSessions,
       };
+
+      console.log(
+        `✅ [UserController] Successfully retrieved user ${user.username} with ${recentSessions.workouts.length} sessions`,
+      );
 
       return hasResponse(res, userWithSessions);
     } catch (error) {
@@ -256,7 +256,8 @@ export class UserController {
   }
 
   /**
-   * Gets a user's profile including stats and recent workouts
+   * Gets a user's profile including stats and recent workouts.
+   * If the user doesn't exist, creates them from Neynar data.
    *
    * @param {string} fid - The Farcaster user ID (fid)
    * @param {Response} res - The response object
@@ -266,7 +267,7 @@ export class UserController {
   @ApiOperation({
     summary: 'Get user profile with stats and recent workouts',
     description:
-      'Retrieves a user profile including stats and recent workouts (max 16)',
+      "Retrieves a user profile including stats and recent workouts (max 16). Creates user from Neynar if they don't exist.",
   })
   async getUserProfile(@Param('fid') fid: string, @Res() res: Response) {
     try {
@@ -280,15 +281,32 @@ export class UserController {
         );
       }
 
+      console.log(
+        `🔍 [UserController] Getting user profile for FID: ${userFid}`,
+      );
+
+      // Ensure user exists (create from Neynar if necessary)
+      await this.userService.getOrCreateUserByFid(userFid);
+
+      // Get the profile data (this includes user creation logic in getUserProfile as well)
       const profile = await this.userService.getUserProfile(userFid);
+
       if (!profile) {
+        // This should not happen since we just created the user if they didn't exist
+        console.error(
+          `❌ [UserController] Profile still null after user creation for FID: ${userFid}`,
+        );
         return hasError(
           res,
-          HttpStatus.NOT_FOUND,
+          HttpStatus.INTERNAL_SERVER_ERROR,
           'getUserProfile',
-          'User not found',
+          'Failed to retrieve user profile after creation',
         );
       }
+
+      console.log(
+        `✅ [UserController] Successfully retrieved profile for user ${profile.user.username}`,
+      );
 
       return hasResponse(res, profile);
     } catch (error) {
@@ -367,6 +385,110 @@ export class UserController {
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getAllUsersWorkouts',
         'Failed to retrieve workouts',
+      );
+    }
+  }
+
+  /**
+   * Sets a user's goal
+   *
+   * @param {QuickAuthPayload} session - The authenticated user session from JWT
+   * @param {string} goal - The goal to set for the user
+   * @param {'preset' | 'custom'} goalType - The type of goal being set
+   * @param {Response} res - The response object
+   * @returns {Promise<Response>} The response containing the updated user
+   */
+  @Post('/goal')
+  @UseGuards(AuthorizationGuard)
+  async setGoal(
+    @Session() session: QuickAuthPayload,
+    @Body() body: { goal: string; goalType: 'preset' | 'custom' },
+    @Res() res: Response,
+  ) {
+    try {
+      const { goal, goalType } = body;
+
+      if (!goal || !goal.trim()) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'setGoal',
+          'Goal is required and cannot be empty',
+        );
+      }
+
+      if (!goalType || !['preset', 'custom'].includes(goalType)) {
+        return hasError(
+          res,
+          HttpStatus.BAD_REQUEST,
+          'setGoal',
+          'Goal type must be either "preset" or "custom"',
+        );
+      }
+
+      console.log(`🎯 [UserController] Setting goal for user FID: ${session.sub}, Goal: ${goal}, Type: ${goalType}`);
+
+      const updatedUser = await this.userService.updateGoal(session.sub, goal.trim(), goalType);
+
+      // Generate AI training plan for the user's goal
+      let trainingPlan = null;
+      try {
+        console.log(`🤖 [UserController] Generating training plan for user ${updatedUser.username}`);
+        trainingPlan = await this.userService.generateTrainingPlan(session.sub, goal.trim(), goalType);
+      } catch (planError) {
+        console.error('❌ [UserController] Error generating training plan:', planError);
+        // Don't fail the goal setting if training plan generation fails
+      }
+
+      console.log(`✅ [UserController] Successfully set goal for user ${updatedUser.username}`);
+
+      return hasResponse(res, {
+        user: updatedUser,
+        trainingPlan,
+        message: 'Goal set successfully',
+      });
+    } catch (error) {
+      console.error('❌ [UserController] Error setting goal:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'setGoal',
+        'Failed to set goal',
+      );
+    }
+  }
+
+  /**
+   * Gets a user's current goal
+   *
+   * @param {QuickAuthPayload} session - The authenticated user session from JWT
+   * @param {Response} res - The response object
+   * @returns {Promise<Response>} The response containing the user's current goal
+   */
+  @Get('/goal')
+  @UseGuards(AuthorizationGuard)
+  async getGoal(
+    @Session() session: QuickAuthPayload,
+    @Res() res: Response,
+  ) {
+    try {
+      console.log(`🎯 [UserController] Getting goal for user FID: ${session.sub}`);
+
+      const goal = await this.userService.getUserGoal(session.sub);
+
+      console.log(`✅ [UserController] Successfully retrieved goal for user FID: ${session.sub}`);
+
+      return hasResponse(res, {
+        goal,
+        hasGoal: !!goal,
+      });
+    } catch (error) {
+      console.error('❌ [UserController] Error getting goal:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getGoal',
+        'Failed to retrieve goal',
       );
     }
   }

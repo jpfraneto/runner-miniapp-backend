@@ -252,4 +252,85 @@ export default class NeynarService {
       throw error;
     }
   };
+
+  /**
+   * Checks if a user is a member of a specific channel
+   *
+   * @param channelId - The channel ID (e.g., 'running')
+   * @param viewerFid - The FID of the user to check membership for
+   * @returns Promise<boolean> - True if user is a member of the channel
+   */
+  checkChannelMembership = async (
+    channelId: string,
+    viewerFid: number,
+  ): Promise<boolean> => {
+    try {
+      console.log(
+        `🔍 [NeynarService] Checking channel membership for FID ${viewerFid} in channel: ${channelId}`,
+      );
+
+      const response = await this.client.lookupChannel({
+        id: channelId,
+        viewerFid: viewerFid,
+      });
+
+      // Check if the user is following the channel
+      const isFollowing = response.channel.viewer_context?.following || false;
+
+      console.log(
+        `✅ [NeynarService] Channel membership check result: ${isFollowing} for FID ${viewerFid} in channel ${channelId}`,
+      );
+
+      return isFollowing;
+    } catch (error) {
+      console.error(
+        `❌ [NeynarService] Error checking channel membership for FID ${viewerFid} in channel ${channelId}:`,
+        error,
+      );
+      // If there's an error checking membership, we'll default to false
+      return false;
+    }
+  };
+
+  /**
+   * Gets user information and channel membership for user creation
+   *
+   * @param fid - The user's FID
+   * @param channelId - The channel ID to check membership for (default: 'running')
+   * @returns Promise with user data and channel membership status
+   */
+  getUserWithChannelMembership = async (
+    fid: number,
+    channelId: string = 'running',
+  ): Promise<{
+    user: User;
+    isChannelMember: boolean;
+  }> => {
+    try {
+      console.log(
+        `🔍 [NeynarService] Getting user ${fid} with channel membership for: ${channelId}`,
+      );
+
+      // Fetch user data and channel membership in parallel
+      const [user, isChannelMember] = await Promise.all([
+        this.getUserByFid(fid),
+        this.checkChannelMembership(channelId, fid),
+      ]);
+
+      console.log(
+        `✅ [NeynarService] Retrieved user ${fid} (${user.username}) with channel membership: ${isChannelMember}`,
+      );
+
+      return {
+        user,
+        isChannelMember,
+      };
+    } catch (error) {
+      console.error(
+        `❌ [NeynarService] Error getting user with channel membership for FID ${fid}:`,
+        error,
+      );
+      throw error;
+    }
+  };
 }
