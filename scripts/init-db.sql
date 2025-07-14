@@ -1,48 +1,53 @@
 -- scripts/init-db.sql
--- Database initialization script for RUNNER API
+-- MySQL Database initialization script for RUNNER API
+
+-- Set proper charset and collation
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET time_zone = '+00:00';
+SET sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO';
 
 -- Create database if not exists (handled by Docker environment)
--- Ensure proper encoding and collation
-ALTER DATABASE runner_db SET timezone TO 'UTC';
+-- Ensure proper charset
+ALTER DATABASE runner_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Create extensions if needed
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+-- Performance optimization settings
+SET GLOBAL innodb_buffer_pool_size = 256*1024*1024; -- 256MB
+SET GLOBAL max_connections = 200;
+SET GLOBAL innodb_log_file_size = 64*1024*1024; -- 64MB
 
--- Create indexes for performance optimization
--- Note: These will be created automatically by TypeORM, but we can add custom ones here
-
--- Performance monitoring
-CREATE OR REPLACE FUNCTION log_slow_queries() RETURNS trigger AS $$
-BEGIN
-    IF TG_OP = 'UPDATE' THEN
-        RAISE LOG 'Slow query detected: % ms', NEW.total_time;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create a function to clean up old logs (optional)
-CREATE OR REPLACE FUNCTION cleanup_old_data() RETURNS void AS $$
+-- Create a function to clean up old logs (if you implement logging tables)
+DELIMITER $
+CREATE PROCEDURE cleanup_old_data()
 BEGIN
     -- Clean up old logs older than 30 days (if you implement logging tables)
-    -- DELETE FROM logs WHERE created_at < NOW() - INTERVAL '30 days';
+    -- DELETE FROM logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY);
     
     -- Clean up old sessions that are very old and not needed
     -- This is just an example - adjust based on your needs
-    RAISE LOG 'Database cleanup completed';
-END;
-$$ LANGUAGE plpgsql;
+    SELECT 'Database cleanup completed' as message;
+END$
+DELIMITER ;
 
--- Create scheduled cleanup (requires pg_cron extension - optional)
--- SELECT cron.schedule('cleanup-job', '0 2 * * *', 'SELECT cleanup_old_data();');
+-- Create scheduled cleanup event (runs daily at 2 AM)
+CREATE EVENT IF NOT EXISTS daily_cleanup
+ON SCHEDULE EVERY 1 DAY
+STARTS TIMESTAMP(CURDATE() + INTERVAL 1 DAY, '02:00:00')
+DO
+  CALL cleanup_old_data();
 
--- Set up proper permissions
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO runner_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO runner_user;
-GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO runner_user;
+-- Set up proper permissions for the runner_user
+GRANT ALL PRIVILEGES ON runner_db.* TO 'runner_user'@'%';
+FLUSH PRIVILEGES;
 
--- Alter default privileges for future objects
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO runner_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO runner_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO runner_user;
+-- Create indexes for better performance (these will complement TypeORM's indexes)
+-- Note: TypeORM will create the actual tables, these are additional optimizations
+
+-- Performance monitoring query (you can run this later to check performance)
+-- SELECT 
+--   TABLE_NAME,
+--   TABLE_ROWS,
+--   DATA_LENGTH/1024/1024 as 'Data Size (MB)',
+--   INDEX_LENGTH/1024/1024 as 'Index Size (MB)'
+-- FROM information_schema.TABLES 
+-- WHERE TABLE_SCHEMA = 'runner_db'
+-- ORDER BY DATA_LENGTH DESC;

@@ -105,14 +105,14 @@ check_health() {
 # Wait for services to be healthy
 echo "🏥 Waiting for services to be healthy..."
 
-# Check database health first
-if ! check_health "runner_postgres"; then
-    echo "❌ Database failed to become healthy"
-    echo "📋 Database logs:"
-    docker-compose -f docker-compose.prod.yml logs postgres | tail -50
+# Check MySQL health first
+if ! check_health "runner_mysql"; then
+    echo "❌ MySQL database failed to become healthy"
+    echo "📋 MySQL logs:"
+    docker-compose -f docker-compose.prod.yml logs mysql | tail -50
     exit 1
 fi
-echo "   ✅ PostgreSQL is healthy"
+echo "   ✅ MySQL is healthy"
 
 # Check API health
 if ! check_health "runner_api"; then
