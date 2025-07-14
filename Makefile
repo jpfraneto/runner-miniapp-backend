@@ -1,23 +1,105 @@
-# Database configuration
-DATABASE_HOST=127.0.0.1
-DATABASE_USER=root
-DATABASE_PORT=3307  
-DATABASE_PASSWORD=1234
-DATABASE_NAME=runnercoin_db
-DATABASE_SSL=false
+# Production Deployment Makefile for RUNNER API
+# Run with: make deploy-production
 
-# Database connection options (uncomment the one that works for you)
-# Option 1: Direct mysql command
-MYSQL_CMD=mysql -h$(DATABASE_HOST) -P$(DATABASE_PORT) -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
+# Variables
+SERVER_USER := root
+SERVER_HOST := 143.198.167.142
+DOMAIN := api.runnercoin.lat
+DB_NAME := runner_db
+DB_USER := runner_user
+DB_PASSWORD := $(shell openssl rand -base64 32)
+JWT_SECRET := $(shell openssl rand -base64 64)
 
-# Option 2: Docker container (if running MySQL in Docker)
-# MYSQL_CMD=docker exec -i runnercoin_db mysql -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
+.PHONY: setup-production deploy-production local-setup docker-setup db-reset db-drop db-create db-status help check-mysql check-server-host restart status logs continue-deployment
 
-# Option 3: Using docker-compose
-MYSQL_CMD=docker-compose exec db mysql -u$(DATABASE_USER) -p$(DATABASE_PASSWORD)
+# Check if SERVER_HOST is set
+check-server-host:
+ifeq ($(SERVER_HOST),YOUR_SERVER_IP_HERE)
+	@echo "❌ Please update SERVER_HOST in the Makefile with your actual server IP"
+	@echo "   Edit the Makefile and change 'YOUR_SERVER_IP_HERE' to your server's IP address"
+	@exit 1
+endif
 
-# Option 4: Using mycli (if installed)
-# MYSQL_CMD=mycli -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p $(DB_PASSWORD) --execute
+# One-command production setup
+deploy-production: check-server-host docker-setup server-setup deploy-app setup-ssl setup-auto-deploy
+	@echo "🚀 Production deployment complete!"
+	@echo "📍 Your API is available at: https://$(DOMAIN)"
+	@echo "🔐 Database password saved in .env.production"
+
+# Initial server setup
+server-setup:
+	@echo "🔧 Setting up production server..."
+	scp scripts/server-setup.sh $(SERVER_USER)@$(SERVER_HOST):/tmp/
+	ssh $(SERVER_USER)@$(SERVER_HOST) "chmod +x /tmp/server-setup.sh && /tmp/server-setup.sh"
+
+# Deploy application (Git-based deployment)
+deploy-app:
+	@echo "📦 Deploying application from GitHub..."
+	scp .env.production $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
+	scp scripts/deploy.sh $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
+	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && chmod +x deploy.sh && ./deploy.sh"
+
+# Setup SSL with Let's Encrypt
+setup-ssl:
+	@echo "🔒 Setting up SSL certificate..."
+	scp scripts/ssl-setup.sh $(SERVER_USER)@$(SERVER_HOST):/tmp/
+	ssh $(SERVER_USER)@$(SERVER_HOST) "chmod +x /tmp/ssl-setup.sh && /tmp/ssl-setup.sh $(DOMAIN)"
+
+# Setup auto-deployment
+setup-auto-deploy:
+	@echo "🔄 Setting up auto-deployment..."
+	scp scripts/webhook-server.js $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
+	scp scripts/webhook.service $(SERVER_USER)@$(SERVER_HOST):/etc/systemd/system/
+	ssh $(SERVER_USER)@$(SERVER_HOST) "systemctl enable webhook && systemctl start webhook"
+
+# Create local Docker setup
+docker-setup:
+	@echo "🐳 Creating Docker configuration..."
+	@echo "Creating .env.production file..."
+	@echo "NODE_ENV=production" > .env.production
+	@echo "PORT=3000" >> .env.production
+	@echo "DB_HOST=postgres" >> .env.production
+	@echo "DB_PORT=5432" >> .env.production
+	@echo "DB_USERNAME=$(DB_USER)" >> .env.production
+	@echo "DB_PASSWORD='$(DB_PASSWORD)'" >> .env.production
+	@echo "DB_NAME=$(DB_NAME)" >> .env.production
+	@echo "DB_REQUIRE_SSL=false" >> .env.production
+	@echo "JWT_SECRET='$(JWT_SECRET)'" >> .env.production
+	@echo "OPENAI_API_KEY=your_openai_key_here" >> .env.production
+	@echo "DIGITAL_OCEAN_SPACES_KEY=your_do_spaces_key_here" >> .env.production
+	@echo "DIGITAL_OCEAN_SPACES_SECRET=your_do_spaces_secret_here" >> .env.production
+	@echo "DIGITAL_OCEAN_SPACES_ENDPOINT=your_do_spaces_endpoint_here" >> .env.production
+	@echo "DIGITAL_OCEAN_SPACES_BUCKET=your_do_spaces_bucket_here" >> .env.production
+	@echo "NEYNAR_API_KEY=your_neynar_api_key_here" >> .env.production
+
+# Local development setup  
+local-setup:
+	@echo "💻 Setting up local development..."
+	docker-compose up -d postgres
+	npm install
+	npm run build
+
+# Emergency restart
+restart:
+	@echo "🧹 Cleaning up..."
+	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose down && docker system prune -f"
+
+# Check deployment status
+status:
+	@echo "📊 Checking deployment status..."
+	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose ps && systemctl status nginx"
+
+# View logs
+logs:
+	@echo "📝 Showing application logs..."
+	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose logs -f --tail=100 api"
+
+# Continue deployment (if server setup already completed)
+continue-deployment: check-server-host deploy-app setup-ssl setup-auto-deploy
+	@echo "🚀 Continuing deployment from where it left off..."
+	@echo "📍 Your API should be available at: https://$(DOMAIN)"
+	@echo "🔄 Restarting services..."
+	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose restart"
 
 # Check MySQL connection method
 check-mysql:
@@ -42,8 +124,6 @@ check-mysql:
 	else \
 		echo "✗ docker-compose not found"; \
 	fi
-
-.PHONY: db-reset db-drop db-create db-status help check-mysql
 
 # Reset database (drop and recreate)
 db-reset: db-drop db-create db-sync db-seed

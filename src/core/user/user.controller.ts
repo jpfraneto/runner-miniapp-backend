@@ -426,21 +426,38 @@ export class UserController {
         );
       }
 
-      console.log(`🎯 [UserController] Setting goal for user FID: ${session.sub}, Goal: ${goal}, Type: ${goalType}`);
+      console.log(
+        `🎯 [UserController] Setting goal for user FID: ${session.sub}, Goal: ${goal}, Type: ${goalType}`,
+      );
 
-      const updatedUser = await this.userService.updateGoal(session.sub, goal.trim(), goalType);
+      const updatedUser = await this.userService.updateGoal(
+        session.sub,
+        goal.trim(),
+        goalType,
+      );
 
       // Generate AI training plan for the user's goal
       let trainingPlan = null;
       try {
-        console.log(`🤖 [UserController] Generating training plan for user ${updatedUser.username}`);
-        trainingPlan = await this.userService.generateTrainingPlan(session.sub, goal.trim(), goalType);
+        console.log(
+          `🤖 [UserController] Generating training plan for user ${updatedUser.username}`,
+        );
+        trainingPlan = await this.userService.generateTrainingPlan(
+          session.sub,
+          goal.trim(),
+          goalType,
+        );
       } catch (planError) {
-        console.error('❌ [UserController] Error generating training plan:', planError);
+        console.error(
+          '❌ [UserController] Error generating training plan:',
+          planError,
+        );
         // Don't fail the goal setting if training plan generation fails
       }
 
-      console.log(`✅ [UserController] Successfully set goal for user ${updatedUser.username}`);
+      console.log(
+        `✅ [UserController] Successfully set goal for user ${updatedUser.username}`,
+      );
 
       return hasResponse(res, {
         user: updatedUser,
@@ -467,16 +484,17 @@ export class UserController {
    */
   @Get('/goal')
   @UseGuards(AuthorizationGuard)
-  async getGoal(
-    @Session() session: QuickAuthPayload,
-    @Res() res: Response,
-  ) {
+  async getGoal(@Session() session: QuickAuthPayload, @Res() res: Response) {
     try {
-      console.log(`🎯 [UserController] Getting goal for user FID: ${session.sub}`);
+      console.log(
+        `🎯 [UserController] Getting goal for user FID: ${session.sub}`,
+      );
 
       const goal = await this.userService.getUserGoal(session.sub);
 
-      console.log(`✅ [UserController] Successfully retrieved goal for user FID: ${session.sub}`);
+      console.log(
+        `✅ [UserController] Successfully retrieved goal for user FID: ${session.sub}`,
+      );
 
       return hasResponse(res, {
         goal,

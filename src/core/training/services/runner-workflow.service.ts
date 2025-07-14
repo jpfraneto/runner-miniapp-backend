@@ -522,10 +522,10 @@ export class RunnerWorkflowService {
   private getWeekStartDate(): Date {
     const today = new Date();
     const currentDay = today.getDay();
-    
+
     // Calculate days since Monday (Monday = 0, Tuesday = 1, ..., Sunday = 6)
     const daysSinceMonday = currentDay === 0 ? 6 : currentDay - 1;
-    
+
     // Calculate the start of the week (Monday)
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - daysSinceMonday);

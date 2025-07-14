@@ -6,6 +6,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import CoreModules from './core';
 // Security
 import { getConfig } from './security/config';
+// Health
+import { HealthModule } from './health';
 // Models
 import {
   User,
@@ -24,6 +26,7 @@ import {
 @Module({
   imports: [
     ...CoreModules,
+    HealthModule,
     TypeOrmModule.forRoot({
       type: 'mysql',
       host: getConfig().db.host,

@@ -1,0 +1,30 @@
+# scripts/webhook.service
+[Unit]
+Description=GitHub Webhook Auto-Deploy Server
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/runner-api
+ExecStart=/usr/bin/node /opt/runner-api/webhook-server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=webhook-deploy
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=GITHUB_WEBHOOK_SECRET=your-webhook-secret-here
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/runner-api
+
+[Install]
+WantedBy=multi-user.target

@@ -170,7 +170,11 @@ export class UserService {
    * @returns {Promise<User>} The updated user entity.
    * @throws {Error} If the user with the specified FID is not found.
    */
-  async updateGoal(fid: User['fid'], goal: string, goalType: 'preset' | 'custom'): Promise<User> {
+  async updateGoal(
+    fid: User['fid'],
+    goal: string,
+    goalType: 'preset' | 'custom',
+  ): Promise<User> {
     const user = await this.userRepository.findOne({
       where: {
         fid,
@@ -189,7 +193,9 @@ export class UserService {
 
     await this.userRepository.save(user);
 
-    console.log(`✅ [UserService] Updated goal for user ${user.username} (FID: ${fid}): ${goal}`);
+    console.log(
+      `✅ [UserService] Updated goal for user ${user.username} (FID: ${fid}): ${goal}`,
+    );
     return user;
   }
 
@@ -224,7 +230,11 @@ export class UserService {
    * @returns {Promise<any>} The generated training plan from AI.
    * @throws {Error} If the user with the specified FID is not found or AI generation fails.
    */
-  async generateTrainingPlan(fid: User['fid'], goal: string, goalType: 'preset' | 'custom'): Promise<any> {
+  async generateTrainingPlan(
+    fid: User['fid'],
+    goal: string,
+    goalType: 'preset' | 'custom',
+  ): Promise<any> {
     const user = await this.userRepository.findOne({
       where: {
         fid,
@@ -250,14 +260,21 @@ export class UserService {
       totalDistance: user.totalDistance,
       averageWeeklyRuns: user.preferredWeeklyFrequency,
       recentRunsCount: recentSessions.length,
-      averageDistance: recentSessions.length > 0 ? 
-        recentSessions.reduce((sum, session) => sum + (session.distance || 0), 0) / recentSessions.length : 0,
+      averageDistance:
+        recentSessions.length > 0
+          ? recentSessions.reduce(
+              (sum, session) => sum + (session.distance || 0),
+              0,
+            ) / recentSessions.length
+          : 0,
     };
 
     const prompt = this.buildTrainingPlanPrompt(goal, goalType, userContext);
 
     try {
-      console.log(`🤖 [UserService] Generating training plan for user ${user.username} (FID: ${fid})`);
+      console.log(
+        `🤖 [UserService] Generating training plan for user ${user.username} (FID: ${fid})`,
+      );
       console.log(`🎯 Goal: ${goal} (${goalType})`);
       console.log(`📊 User context:`, userContext);
 
@@ -266,7 +283,8 @@ export class UserService {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert running coach and training plan specialist. You create personalized, safe, and effective training plans for runners of all levels.',
+            content:
+              'You are an expert running coach and training plan specialist. You create personalized, safe, and effective training plans for runners of all levels.',
           },
           {
             role: 'user',
@@ -279,7 +297,9 @@ export class UserService {
 
       const aiResponse = completion.choices[0]?.message?.content;
       if (!aiResponse) {
-        throw new Error('Failed to generate training plan - no response from AI');
+        throw new Error(
+          'Failed to generate training plan - no response from AI',
+        );
       }
 
       // Try to parse JSON response
@@ -287,7 +307,10 @@ export class UserService {
       try {
         trainingPlan = JSON.parse(aiResponse);
       } catch (parseError) {
-        console.error('❌ [UserService] Failed to parse AI response as JSON:', parseError);
+        console.error(
+          '❌ [UserService] Failed to parse AI response as JSON:',
+          parseError,
+        );
         // If JSON parsing fails, return a structured version of the text response
         trainingPlan = {
           goal,
@@ -299,7 +322,9 @@ export class UserService {
         };
       }
 
-      console.log(`✅ [UserService] Generated training plan for user ${user.username}`);
+      console.log(
+        `✅ [UserService] Generated training plan for user ${user.username}`,
+      );
       return trainingPlan;
     } catch (error) {
       console.error('❌ [UserService] Error generating training plan:', error);
@@ -315,7 +340,11 @@ export class UserService {
    * @param {any} userContext - User's current fitness context.
    * @returns {string} The formatted prompt for AI.
    */
-  private buildTrainingPlanPrompt(goal: string, goalType: 'preset' | 'custom', userContext: any): string {
+  private buildTrainingPlanPrompt(
+    goal: string,
+    goalType: 'preset' | 'custom',
+    userContext: any,
+  ): string {
     const basePrompt = `
 Please create a personalized training plan for a runner with the following details:
 
@@ -397,7 +426,10 @@ Make sure the plan is:
    * @param {'preset' | 'custom'} goalType - The type of goal.
    * @returns {number} Estimated weeks for training.
    */
-  private estimateTrainingWeeks(goal: string, goalType: 'preset' | 'custom'): number {
+  private estimateTrainingWeeks(
+    goal: string,
+    goalType: 'preset' | 'custom',
+  ): number {
     if (goalType === 'preset') {
       switch (goal) {
         case '5k':
