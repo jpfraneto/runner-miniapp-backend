@@ -25,6 +25,11 @@ git remote set-url origin https://github.com/jpfraneto/runner-miniapp-backend.gi
 # Fetch and checkout the latest main branch
 echo "📥 Fetching latest changes from main branch..."
 git fetch origin main
+
+# Force checkout to handle any conflicting files
+echo "🔄 Checking out latest main branch (force)..."
+git reset --hard HEAD
+git clean -fd  # Remove untracked files
 git checkout -B main origin/main
 
 # Ensure we have all required files
