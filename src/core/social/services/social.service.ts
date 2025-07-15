@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { LessThan } from 'typeorm';
 
 // Models
 import { User } from '../../../models';
@@ -96,13 +97,43 @@ export class SocialService {
         );
         this.currentlyProcessingCache.clear();
       }
+
+      // Clean up stale processing records in database (older than 1 hour)
+      this.cleanupStaleProcessingRecords();
     }, this.CACHE_CLEANUP_INTERVAL);
   }
 
   /**
-   * Check if a cast has already been processed
+   * Clean up stale processing records in the database
    */
-  private async isCastAlreadyProcessed(castHash: string): Promise<boolean> {
+  private async cleanupStaleProcessingRecords(): Promise<void> {
+    try {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const staleRecords = await this.farcasterCastRepository.find({
+        where: {
+          imageUrl: 'PROCESSING_PLACEHOLDER',
+          createdAt: LessThan(oneHourAgo),
+        },
+      });
+
+      if (staleRecords.length > 0) {
+        console.log(
+          `🧹 Cleaning up ${staleRecords.length} stale processing records`,
+        );
+        await this.farcasterCastRepository.remove(staleRecords);
+      }
+    } catch (error) {
+      console.error('❌ Error cleaning up stale processing records:', error);
+    }
+  }
+
+  /**
+   * Check if a cast has already been processed and atomically mark it as processing
+   * This method uses database-level locking to ensure true idempotency
+   */
+  private async isCastAlreadyProcessed(
+    castHash: string,
+  ): Promise<{ alreadyProcessed: boolean; isNewlyMarked: boolean }> {
     // First check in-memory cache for quick lookup
     if (this.processedCastsCache.has(castHash)) {
       console.log(
@@ -111,34 +142,101 @@ export class SocialService {
       this.duplicateDetectionStats.duplicatesFromCache++;
       this.duplicateDetectionStats.duplicatesDetected++;
       this.duplicateDetectionStats.lastDuplicateDetected = new Date();
-      return true;
+      return { alreadyProcessed: true, isNewlyMarked: false };
     }
 
-    // Check database for historical records
-    const existingCast = await this.farcasterCastRepository.findOne({
-      where: { farcasterCastHash: castHash },
-    });
+    // Use database transaction to atomically check and mark as processing
+    const queryRunner =
+      this.farcasterCastRepository.manager.connection.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (existingCast) {
-      console.log(`🔍 Cast ${castHash} found in database - already processed`);
-      // Add to cache for future quick lookups
-      this.processedCastsCache.add(castHash);
-      this.duplicateDetectionStats.duplicatesFromDb++;
-      this.duplicateDetectionStats.duplicatesDetected++;
-      this.duplicateDetectionStats.lastDuplicateDetected = new Date();
-      return true;
+    try {
+      // Check if cast already exists in database
+      const existingCast = await queryRunner.manager.findOne(FarcasterCast, {
+        where: { farcasterCastHash: castHash },
+      });
+
+      if (existingCast) {
+        console.log(
+          `🔍 Cast ${castHash} found in database - already processed`,
+        );
+        // Add to cache for future quick lookups
+        this.processedCastsCache.add(castHash);
+        this.duplicateDetectionStats.duplicatesFromDb++;
+        this.duplicateDetectionStats.duplicatesDetected++;
+        this.duplicateDetectionStats.lastDuplicateDetected = new Date();
+        await queryRunner.rollbackTransaction();
+        return { alreadyProcessed: true, isNewlyMarked: false };
+      }
+
+      // Atomically insert a placeholder record to mark this cast as being processed
+      // This prevents race conditions where multiple webhooks try to process the same cast
+      const placeholderCast = new FarcasterCast();
+      placeholderCast.farcasterCastHash = castHash;
+      placeholderCast.userId = 0; // Placeholder value
+      placeholderCast.imageUrl = 'PROCESSING_PLACEHOLDER'; // Mark as placeholder
+      placeholderCast.caption = 'PROCESSING_PLACEHOLDER'; // Mark as placeholder
+
+      await queryRunner.manager.save(FarcasterCast, placeholderCast);
+      await queryRunner.commitTransaction();
+
+      console.log(
+        `✅ Cast ${castHash} is new - atomically marked as processing`,
+      );
+      return { alreadyProcessed: false, isNewlyMarked: true };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+
+      // If we get a duplicate key error, it means another process already inserted this cast
+      if (
+        error.code === 'ER_DUP_ENTRY' ||
+        error.message.includes('duplicate key') ||
+        error.message.includes('UNIQUE constraint failed')
+      ) {
+        console.log(
+          `🔍 Cast ${castHash} was inserted by another process - already being processed`,
+        );
+        this.processedCastsCache.add(castHash);
+        this.duplicateDetectionStats.duplicatesDetected++;
+        this.duplicateDetectionStats.lastDuplicateDetected = new Date();
+        return { alreadyProcessed: true, isNewlyMarked: false };
+      }
+
+      console.error(
+        `❌ Database error during duplicate check for cast ${castHash}:`,
+        error,
+      );
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    console.log(`✅ Cast ${castHash} is new - proceeding with processing`);
-    return false;
   }
 
   /**
-   * Mark a cast as processed
+   * Mark a cast as fully processed (update the placeholder record)
    */
-  private markCastAsProcessed(castHash: string) {
-    this.processedCastsCache.add(castHash);
-    console.log(`📝 Marked cast ${castHash} as processed in cache`);
+  private async markCastAsFullyProcessed(
+    castHash: string,
+    castData: any,
+    result: any,
+  ): Promise<void> {
+    try {
+      // Update the placeholder record with actual cast data
+      await this.farcasterCastRepository.update(
+        { farcasterCastHash: castHash },
+        {
+          userId: castData.author.fid,
+          imageUrl: `Processed cast from FID ${castData.author.fid}`,
+          caption: castData.text || 'Processed workout cast',
+        },
+      );
+
+      this.processedCastsCache.add(castHash);
+      console.log(`📝 Marked cast ${castHash} as fully processed in database`);
+    } catch (error) {
+      console.error(`❌ Error marking cast ${castHash} as processed:`, error);
+    }
   }
 
   /**
@@ -217,6 +315,9 @@ export class SocialService {
       }
 
       console.log(`🔍 Processing cast with hash: ${castHash}`);
+      console.log(
+        `📊 Webhook stats - Total: ${this.duplicateDetectionStats.totalWebhooks}, Duplicates: ${this.duplicateDetectionStats.duplicatesDetected}`,
+      );
 
       // **ROOT CAST FILTER** - Only process root casts (not replies)
       if (thisCast.parent_hash !== null) {
@@ -252,7 +353,12 @@ export class SocialService {
       }
 
       // **DEDUPLICATION CHECK** - Prevent processing the same cast multiple times
-      const alreadyProcessed = await this.isCastAlreadyProcessed(castHash);
+      console.log(
+        `🔍 Checking if cast ${castHash} has already been processed...`,
+      );
+      const { alreadyProcessed, isNewlyMarked } =
+        await this.isCastAlreadyProcessed(castHash);
+
       if (alreadyProcessed) {
         console.log(
           `⚠️  DUPLICATE WEBHOOK DETECTED: Cast ${castHash} has already been processed - skipping`,
@@ -267,9 +373,11 @@ export class SocialService {
         };
       }
 
-      // Mark as currently processing AND processed to prevent all race conditions
+      console.log(`✅ Cast ${castHash} is new and ready for processing`);
+
+      // Mark as currently processing to prevent race conditions
       this.currentlyProcessingCache.add(castHash);
-      this.markCastAsProcessed(castHash);
+      console.log(`🔒 Added cast ${castHash} to currently processing cache`);
 
       // Process the cast
       console.log(`🚀 Processing new cast: ${castHash}`);
@@ -314,8 +422,15 @@ export class SocialService {
         );
       }
 
+      // Mark as fully processed in the database
+      console.log(`💾 Marking cast ${castHash} as fully processed in database`);
+      await this.markCastAsFullyProcessed(castHash, thisCast, result);
+
       // Clean up currently processing cache
       this.currentlyProcessingCache.delete(castHash);
+      console.log(
+        `🔓 Removed cast ${castHash} from currently processing cache`,
+      );
 
       return {
         success: true,
@@ -334,6 +449,9 @@ export class SocialService {
       // Clean up currently processing cache on error too
       if (castHash) {
         this.currentlyProcessingCache.delete(castHash);
+        console.log(
+          `🔓 Removed cast ${castHash} from currently processing cache due to error`,
+        );
       }
       return {
         success: false,

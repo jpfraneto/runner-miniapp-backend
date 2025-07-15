@@ -21,6 +21,115 @@ export class EmbedsController {
   constructor(private readonly embedsService: EmbedsService) {}
 
   /**
+   * Generate user's profile embed data (for Farcaster embeds)
+   * URL: /embeds/user/:fid
+   */
+  @Get('/user/:fid')
+  async getUserProfileEmbed(
+    @Param('fid') fid: string,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      this.logger.log(
+        `Generating user's profile embed data for user FID: ${fid}`,
+      );
+
+      const embedData = await this.embedsService.generateUserProfileEmbedData(
+        Number(fid),
+      );
+
+      if (!embedData) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getUserProfileEmbed',
+          'User not found',
+        );
+      }
+      console.log('THE EMBED DATA IS:::: ', embedData);
+      const html = `
+      <html>
+      <head>
+        <title>Runnercoin</title>
+
+       <meta name="fc:frame" content='{
+    "version":"1",
+    "imageUrl":"${embedData.imageUrl}",
+    "button":{
+      "title":"View Stats",
+      "action":{
+        "type":"launch_frame",
+        "name":"$runner",
+        "url":"${embedData.targetUrl}"
+      }
+    }
+  }' />
+      </head>
+      <body>
+        <p>Hello World</p>
+      </body>
+      </html>
+    `;
+
+      // Return JSON embed data
+      res.setHeader('Content-Type', 'text/html');
+      // res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+      return res.send(html);
+    } catch (error) {
+      this.logger.error(
+        `Error generating user profile embed for ${fid}:`,
+        error,
+      );
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getUserProfileEmbed',
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Generate user's profile SVG image
+   * URL: /embeds/user/:fid/image
+   */
+  @Get('/user/:fid/image')
+  async getUserProfileImage(
+    @Param('fid') fid: string,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      this.logger.log(`Generating user's profile SVG for user FID: ${fid}`);
+
+      const svgContent = await this.embedsService.generateUserProfileSvgString(
+        Number(fid),
+      );
+
+      if (!svgContent) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getUserProfileImage',
+          'User not found',
+        );
+      }
+
+      // Return SVG with proper content-type
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+      return res.send(svgContent);
+    } catch (error) {
+      this.logger.error(`Error generating user profile SVG for ${fid}:`, error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getUserProfileImage',
+        error.message,
+      );
+    }
+  }
+
+  /**
    * Generate dynamic embed for running achievement sharing
    * URL: /embeds/achievement/:fid/:achievementType
    */
@@ -197,6 +306,79 @@ export class EmbedsController {
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getWorkoutImage',
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Generate workout miniapp HTML (Farcaster Mini App)
+   * URL: /run/:castHash
+   */
+  @Get('/run/:castHash')
+  async getWorkoutMiniApp(
+    @Param('castHash') castHash: string,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      this.logger.log(
+        `Generating workout miniapp HTML for castHash: ${castHash}`,
+      );
+      const html =
+        await this.embedsService.generateWorkoutMiniAppHtml(castHash);
+      if (!html) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getWorkoutMiniApp',
+          'Workout not found',
+        );
+      }
+      res.setHeader('Content-Type', 'text/html');
+      return res.send(html);
+    } catch (error) {
+      this.logger.error(
+        `Error generating workout miniapp HTML for ${castHash}:`,
+        error,
+      );
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getWorkoutMiniApp',
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Generate workout SVG image
+   * URL: /run/:castHash/image
+   */
+  @Get('/run/:castHash/image')
+  async getWorkoutImageSvg(
+    @Param('castHash') castHash: string,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      this.logger.log(`Generating workout SVG image for castHash: ${castHash}`);
+      const svg = await this.embedsService.generateWorkoutSvgImage(castHash);
+      if (!svg) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getWorkoutImageSvg',
+          'Workout not found',
+        );
+      }
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(svg);
+    } catch (error) {
+      this.logger.error(`Error generating workout SVG for ${castHash}:`, error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getWorkoutImageSvg',
         error.message,
       );
     }

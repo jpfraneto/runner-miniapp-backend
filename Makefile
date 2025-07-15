@@ -3,20 +3,37 @@
 
 # Variables
 SERVER_USER := root
-SERVER_HOST := 143.198.167.142
+SERVER_HOST := YOUR_DROPLET_IP_HERE
 DOMAIN := api.runnercoin.lat
-DB_NAME := runner_db
-DB_USER := runner_user
-DB_PASSWORD := $(shell openssl rand -base64 32)
+DATABASE_NAME := runnercoin_db
+DATABASE_USER := runner_user
+MYSQL_ROOT_PASSWORD := $(shell openssl rand -base64 32)
+DATABASE_PASSWORD := $(shell openssl rand -base64 32)
 JWT_SECRET := $(shell openssl rand -base64 64)
 
-.PHONY: setup-production deploy-production local-setup docker-setup db-reset db-drop db-create db-status help check-mysql check-server-host restart status logs continue-deployment
+# MySQL connection command
+MYSQL_CMD := docker-compose -f docker-compose.prod.yml exec -T mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD)
+
+.PHONY: simple-deploy deploy-production local-setup docker-setup db-reset db-drop db-create db-status help check-mysql check-server-host restart status logs continue-deployment
+
+# Simple one-command deployment (local execution)
+simple-deploy:
+	@echo "🚀 Starting simple deployment..."
+	@echo "📋 Make sure you've:"
+	@echo "   1. Updated your .env file with production values"
+	@echo "   2. Set your DNS to point api.runnercoin.lat to your droplet"
+	@echo "   3. Have SSH access to your droplet"
+	@echo ""
+	@read -p "Enter your droplet IP address: " DROPLET_IP && \
+	scp .env root@$$DROPLET_IP:/tmp/.env && \
+	scp scripts/simple-deploy.sh root@$$DROPLET_IP:/tmp/simple-deploy.sh && \
+	ssh root@$$DROPLET_IP "chmod +x /tmp/simple-deploy.sh && /tmp/simple-deploy.sh"
 
 # Check if SERVER_HOST is set
 check-server-host:
-ifeq ($(SERVER_HOST),YOUR_SERVER_IP_HERE)
+ifeq ($(SERVER_HOST),YOUR_DROPLET_IP_HERE)
 	@echo "❌ Please update SERVER_HOST in the Makefile with your actual server IP"
-	@echo "   Edit the Makefile and change 'YOUR_SERVER_IP_HERE' to your server's IP address"
+	@echo "   Edit the Makefile and change 'YOUR_DROPLET_IP_HERE' to your server's IP address"
 	@exit 1
 endif
 

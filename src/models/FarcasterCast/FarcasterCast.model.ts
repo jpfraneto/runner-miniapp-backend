@@ -27,7 +27,7 @@ export class FarcasterCast {
   @Column({ type: 'text' })
   caption: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, unique: true })
   farcasterCastHash: string;
 
   @Column({ default: 0 })

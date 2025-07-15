@@ -13,6 +13,7 @@ import { UnitType } from '../../../models/RunningSession/RunningSession.model';
 
 // Neynar client for posting replies
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
+import { getConfig } from 'src/security/config';
 
 export interface CastWorkoutData {
   // Core fields that match RunningSession model
@@ -216,6 +217,7 @@ export class CastProcessorService {
   private readonly logger = new Logger(CastProcessorService.name);
   private readonly openai: OpenAI;
   private readonly neynarClient: NeynarAPIClient;
+  private readonly config = getConfig();
 
   // Fun messages for different types of non-workout images
   private readonly funMessages = [
@@ -764,7 +766,7 @@ export class CastProcessorService {
         idem: idempotencyKey,
         embeds: [
           {
-            url: 'https://runnercoin.lat',
+            url: `${this.config.isProduction ? 'https://api.runnercoin.lat' : 'https://poiesis.anky.app'}/embeds/run/${parentCastHash}`,
           },
         ],
       });

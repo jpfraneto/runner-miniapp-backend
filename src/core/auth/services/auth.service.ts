@@ -80,6 +80,7 @@ export class AuthService implements OnModuleInit {
     } catch (error) {
       logger.error('QuickAuth token verification failed once:', error.message);
       try {
+        console.log('Verifying token with miniapp.anky.app');
         const domain = 'miniapp.anky.app';
         const payload = await this.farcasterClient.verifyJwt({ token, domain });
         logger.log('Payload:', payload);

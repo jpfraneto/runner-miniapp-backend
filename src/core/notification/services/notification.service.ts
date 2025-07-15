@@ -428,7 +428,10 @@ export class NotificationService {
         .where('user.notificationsEnabled = true')
         .andWhere('user.notificationToken IS NOT NULL')
         .andWhere('DATE(user.lastRunReminderSent) = :today', { today }) // Got morning reminder
-        .andWhere('user.lastRunTracked < :today', { today }) // Haven't tracked run today
+        .andWhere(
+          '(user.lastRunDate IS NULL OR DATE(user.lastRunDate) < :today)',
+          { today },
+        ) // Haven't tracked run today
         .getMany();
 
       if (usersNeedingEvening.length === 0) {

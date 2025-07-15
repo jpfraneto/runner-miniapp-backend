@@ -79,6 +79,28 @@ export class TrainingService {
   }
 
   /**
+   * Get running session by cast hash
+   *
+   * @param castHash - The cast hash to search for
+   * @returns Running session with user details or null if not found
+   */
+  async getRunningSessionByCastHash(
+    castHash: string,
+  ): Promise<RunningSession | null> {
+    try {
+      const runningSession = await this.runningSessionRepository.findOne({
+        where: { castHash },
+        relations: ['user', 'intervals'],
+      });
+
+      return runningSession || null;
+    } catch (error) {
+      console.error('Error fetching running session by cast hash:', error);
+      return null;
+    }
+  }
+
+  /**
    * Update a workout session
    *
    * @param userFid - The FID of the user requesting the update

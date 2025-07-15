@@ -779,4 +779,51 @@ export class TrainingController {
       );
     }
   }
+
+  /**
+   * Get running session by cast hash
+   */
+  @Get('/runs/:castHash')
+  @UseGuards(AuthorizationGuard)
+  @ApiOperation({
+    summary: 'Get running session by cast hash',
+    description:
+      'Retrieves a running session and its details using the associated cast hash',
+  })
+  async getRunningSessionByCastHash(
+    @Param('castHash') castHash: string,
+    @Res() res: Response,
+  ) {
+    try {
+      console.log(
+        '🏃 [TrainingController] Getting running session by cast hash:',
+        castHash,
+      );
+
+      const runningSession =
+        await this.trainingService.getRunningSessionByCastHash(castHash);
+
+      if (!runningSession) {
+        return hasError(
+          res,
+          HttpStatus.NOT_FOUND,
+          'getRunningSessionByCastHash',
+          'Running session not found for this cast hash.',
+        );
+      }
+
+      return hasResponse(res, runningSession);
+    } catch (error) {
+      console.error(
+        '❌ [TrainingController] Failed to get running session by cast hash:',
+        error,
+      );
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getRunningSessionByCastHash',
+        'Unable to retrieve running session.',
+      );
+    }
+  }
 }

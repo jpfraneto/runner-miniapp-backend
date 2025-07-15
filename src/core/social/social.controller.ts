@@ -142,7 +142,7 @@ export class SocialController {
   @ApiOperation({
     summary: 'Process Farcaster cast webhook',
     description:
-      'Receives webhook from Neynar and processes casts for workout detection',
+      'Receives webhook from Neynar and processes casts for workout detection. This is the main webhook endpoint that handles all cast processing with built-in idempotency.',
   })
   async getCastWebhook(@Body() webhookData: any, @Res() res: Response) {
     try {
@@ -164,6 +164,10 @@ export class SocialController {
           if (result.success) {
             if (result.duplicate) {
               console.log('⚠️  Duplicate webhook detected - already processed');
+            } else if (result.concurrent) {
+              console.log(
+                '⚠️  Concurrent processing detected - webhook ignored',
+              );
             } else if (result.isReply) {
               console.log(
                 '📝 Reply cast filtered - only processing root casts',
@@ -184,151 +188,6 @@ export class SocialController {
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getCastWebhook',
-        'Internal server error receiving webhook',
-      );
-    }
-  }
-
-  /**
-   * Process Farcaster cast webhook with embed URL filtering
-   */
-  @Post('/farcaster/cast-webhook/embed-filter')
-  @ApiOperation({
-    summary: 'Process Farcaster cast webhook with embed filtering',
-    description:
-      'Processes casts that contain specific embed URLs (e.g., running app screenshots)',
-  })
-  async getCastWebhookWithEmbedFilter(
-    @Body() webhookData: WebhookData,
-    @Res() res: Response,
-  ) {
-    try {
-      console.log('📨 Farcaster cast webhook with embed filter received');
-
-      // Return 200 immediately to prevent duplicate webhook processing
-      hasResponse(res, { message: 'Webhook received' });
-
-      // Process webhook in background without awaiting
-      setImmediate(async () => {
-        try {
-          // Check if the cast contains image embeds
-          const castData = webhookData.data;
-          if (!castData) {
-            console.error('❌ Invalid webhook data format');
-            return;
-          }
-
-          const hasImageEmbeds = castData.embeds.some(
-            (embed) =>
-              embed.url &&
-              (embed.url.includes('imagedelivery.net') ||
-                embed.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ||
-                (embed.metadata &&
-                  embed.metadata.content_type &&
-                  embed.metadata.content_type.startsWith('image/'))),
-          );
-
-          if (!hasImageEmbeds) {
-            console.log('📝 Cast has no image embeds, skipping processing');
-            return;
-          }
-
-          const result =
-            await this.socialService.processCastWebhook(webhookData);
-
-          if (result.success) {
-            if (result.duplicate) {
-              console.log('⚠️  Duplicate webhook detected - already processed');
-            } else if (result.isReply) {
-              console.log(
-                '📝 Reply cast filtered - only processing root casts',
-              );
-            } else {
-              console.log('✅ Webhook processed successfully');
-            }
-          } else {
-            console.error('❌ Webhook processing failed:', result.error);
-          }
-        } catch (error) {
-          console.error('❌ Error processing webhook in background:', error);
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error receiving webhook:', error);
-      return hasError(
-        res,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        'getCastWebhookWithEmbedFilter',
-        'Internal server error receiving webhook',
-      );
-    }
-  }
-
-  /**
-   * Process Farcaster cast webhook for specific users
-   */
-  @Post('/farcaster/cast-webhook/user-filter')
-  @ApiOperation({
-    summary: 'Process Farcaster cast webhook for specific users',
-    description:
-      'Processes casts from specific FIDs (useful for testing with known users)',
-  })
-  async getCastWebhookForSpecificUsers(
-    @Body() webhookData: WebhookData,
-    @Res() res: Response,
-  ) {
-    try {
-      console.log('📨 Farcaster cast webhook for specific users received');
-
-      // Return 200 immediately to prevent duplicate webhook processing
-      hasResponse(res, { message: 'Webhook received' });
-
-      // Process webhook in background without awaiting
-      setImmediate(async () => {
-        try {
-          // Extract cast data
-          const castData = webhookData.data;
-          if (!castData) {
-            console.error('❌ Invalid webhook data format');
-            return;
-          }
-
-          // Define allowed FIDs (you can make this configurable)
-          const allowedFids = [194, 1234, 5678]; // Example FIDs
-
-          if (!allowedFids.includes(castData.author.fid)) {
-            console.log(
-              `📝 Cast from FID ${castData.author.fid} not in allowed list, skipping`,
-            );
-            return;
-          }
-
-          const result =
-            await this.socialService.processCastWebhook(webhookData);
-
-          if (result.success) {
-            if (result.duplicate) {
-              console.log('⚠️  Duplicate webhook detected - already processed');
-            } else if (result.isReply) {
-              console.log(
-                '📝 Reply cast filtered - only processing root casts',
-              );
-            } else {
-              console.log('✅ Webhook processed successfully');
-            }
-          } else {
-            console.error('❌ Webhook processing failed:', result.error);
-          }
-        } catch (error) {
-          console.error('❌ Error processing webhook in background:', error);
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error receiving webhook:', error);
-      return hasError(
-        res,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        'getCastWebhookForSpecificUsers',
         'Internal server error receiving webhook',
       );
     }
