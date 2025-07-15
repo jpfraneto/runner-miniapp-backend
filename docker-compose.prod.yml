@@ -1,4 +1,5 @@
 # docker-compose.prod.yml
+version: '3.8'
 
 services:
   mysql:
@@ -18,10 +19,16 @@ services:
     networks:
       - runner_network
     healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '-p${MYSQL_ROOT_PASSWORD:-rootpassword}']
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '--password=$$MYSQL_ROOT_PASSWORD']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s # Give MySQL 60 seconds before starting health checks
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=256M
+      --max-connections=100
+      --wait_timeout=600
 
   api:
     build:
@@ -44,7 +51,8 @@ services:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 90s # Give API 90 seconds to start
     deploy:
       resources:
         limits:
@@ -60,13 +68,12 @@ services:
       - '80:80'
       - '443:443'
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/sites-available:/etc/nginx/sites-available
-      - ./nginx/sites-enabled:/etc/nginx/sites-enabled
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - runner_network
 
