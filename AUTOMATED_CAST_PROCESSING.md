@@ -51,7 +51,8 @@ DB_NAME=your_db_name
 ### Cron Schedule
 
 The system runs every 15 minutes using NestJS Schedule module:
-- `@Cron(CronExpression.EVERY_15_MINUTES)`
+
+- `@Cron(CronExpression.EVERY_5_MINUTES)`
 - Checks for new casts since last run
 - Only processes casts from last 24 hours
 
@@ -60,12 +61,15 @@ The system runs every 15 minutes using NestJS Schedule module:
 ### Manual Controls
 
 #### 1. Trigger Manual Fetch
+
 ```
 POST /social-service/automation/trigger-cast-fetch
 ```
+
 Manually triggers the cast fetching process.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -75,12 +79,15 @@ Manually triggers the cast fetching process.
 ```
 
 #### 2. Get Status
+
 ```
 GET /social-service/automation/status
 ```
+
 Returns current automation status.
 
 **Response:**
+
 ```json
 {
   "isRunning": false,
@@ -91,12 +98,15 @@ Returns current automation status.
 ```
 
 #### 3. Health Check
+
 ```
 GET /social-service/automation/health
 ```
+
 Returns detailed health information.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -114,25 +124,31 @@ Returns detailed health information.
 ```
 
 #### 4. Reset Failures
+
 ```
 POST /social-service/automation/reset-failures
 ```
+
 Resets the consecutive failure counter.
 
 ## Error Handling
 
 ### Failure Tracking
+
 - Tracks consecutive failures
 - Stops automated processing after 3 consecutive failures
 - Provides detailed error logging
 
 ### Recovery
+
 - Automatic recovery on next successful run
 - Manual failure counter reset via API
 - Comprehensive health monitoring
 
 ### Logging
+
 The system provides detailed logging:
+
 - System status before each run
 - Processing statistics
 - Error details with failure counts
@@ -141,24 +157,29 @@ The system provides detailed logging:
 ## Monitoring
 
 ### System Status Logs
+
 Every 15 minutes, the system logs:
+
 - Last successful run time
 - Consecutive failure count
 - Casts processed in last 24 hours
 - Hours since last processed cast
 
 ### Health Indicators
+
 - **Healthy**: System running normally, failures < 3
 - **Unhealthy**: System has issues or too many failures
 
 ## Database Integration
 
 ### Processed Casts Tracking
+
 - Uses existing `FarcasterCast` table
 - Tracks last processed cast hash
 - Prevents duplicate processing
 
 ### Workout Data Storage
+
 - Integrates with existing `RunningSession` model
 - Creates user records automatically
 - Updates user statistics
@@ -166,12 +187,14 @@ Every 15 minutes, the system logs:
 ## Performance
 
 ### Optimizations
+
 - 500ms delay between API requests to respect rate limits
 - Incremental fetching (only new casts)
 - Smart stopping when reaching processed casts
 - 24-hour time window to limit processing scope
 
 ### Resource Usage
+
 - Minimal CPU usage (only runs every 15 minutes)
 - Efficient memory usage with streaming processing
 - Database queries optimized for recent data
@@ -214,6 +237,7 @@ curl -X POST http://localhost:3000/social-service/automation/reset-failures
 ### Logs to Monitor
 
 Look for these log patterns:
+
 - `🚀 Starting automated cast fetching cron job`
 - `📊 System Status:`
 - `✅ Cast fetching cron job completed successfully`
@@ -225,15 +249,18 @@ Look for these log patterns:
 This system replaces your manual workflow:
 
 ### Old Process
+
 1. Run first script to fetch casts → `running_casts.json`
 2. Run second script to process images → database
 
 ### New Process
+
 1. Automated every 15 minutes
 2. Direct database integration
 3. No manual intervention needed
 
 ### Benefits
+
 - No more manual script running
 - Real-time processing
 - Automatic error recovery
@@ -243,6 +270,7 @@ This system replaces your manual workflow:
 ## Future Enhancements
 
 Potential improvements:
+
 - Webhook integration for real-time processing
 - Advanced analytics and metrics
 - Custom processing rules
@@ -252,6 +280,7 @@ Potential improvements:
 ## Support
 
 For issues or questions:
+
 1. Check the logs for error details
 2. Use the health endpoint for system status
 3. Try manual trigger to test processing

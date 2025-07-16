@@ -21,10 +21,12 @@ export class CastSchedulerService {
     private readonly farcasterCastRepository: Repository<FarcasterCast>,
   ) {}
 
-  @Cron(CronExpression.EVERY_15_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async handleCastFetching(): Promise<void> {
     if (this.isRunning) {
-      this.logger.warn('⚠️ Cast fetching already in progress, skipping this run');
+      this.logger.warn(
+        '⚠️ Cast fetching already in progress, skipping this run',
+      );
       return;
     }
 
@@ -33,11 +35,15 @@ export class CastSchedulerService {
 
     try {
       this.logger.log('🚀 Starting automated cast fetching cron job');
-      
+
       // Check if we should continue based on consecutive failures
       if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
-        this.logger.error(`❌ Too many consecutive failures (${this.consecutiveFailures}). Skipping this run.`);
-        this.logger.log('💡 Manual intervention may be required. Check logs and restart service.');
+        this.logger.error(
+          `❌ Too many consecutive failures (${this.consecutiveFailures}). Skipping this run.`,
+        );
+        this.logger.log(
+          '💡 Manual intervention may be required. Check logs and restart service.',
+        );
         return;
       }
 
@@ -52,17 +58,25 @@ export class CastSchedulerService {
       this.consecutiveFailures = 0;
 
       const duration = Date.now() - startTime.getTime();
-      this.logger.log(`✅ Cast fetching cron job completed successfully in ${duration}ms`);
-
+      this.logger.log(
+        `✅ Cast fetching cron job completed successfully in ${duration}ms`,
+      );
     } catch (error) {
       this.consecutiveFailures++;
       const duration = Date.now() - startTime.getTime();
-      
-      this.logger.error(`❌ Cast fetching cron job failed after ${duration}ms (failure #${this.consecutiveFailures}):`, error);
-      
+
+      this.logger.error(
+        `❌ Cast fetching cron job failed after ${duration}ms (failure #${this.consecutiveFailures}):`,
+        error,
+      );
+
       if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
-        this.logger.error(`🚨 CRITICAL: ${this.MAX_CONSECUTIVE_FAILURES} consecutive failures. Automated processing will stop.`);
-        this.logger.log('💡 To resume: Fix the underlying issue and restart the service.');
+        this.logger.error(
+          `🚨 CRITICAL: ${this.MAX_CONSECUTIVE_FAILURES} consecutive failures. Automated processing will stop.`,
+        );
+        this.logger.log(
+          '💡 To resume: Fix the underlying issue and restart the service.',
+        );
       }
     } finally {
       this.isRunning = false;
@@ -73,7 +87,7 @@ export class CastSchedulerService {
     try {
       // Get stats from the last 24 hours
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      
+
       const recentCasts = await this.farcasterCastRepository.count({
         where: {
           createdAt: MoreThan(twentyFourHoursAgo),
@@ -86,24 +100,34 @@ export class CastSchedulerService {
       });
 
       this.logger.log(`📊 System Status:`);
-      this.logger.log(`   • Last run: ${this.lastRunTime ? this.lastRunTime.toISOString() : 'Never'}`);
+      this.logger.log(
+        `   • Last run: ${this.lastRunTime ? this.lastRunTime.toISOString() : 'Never'}`,
+      );
       this.logger.log(`   • Consecutive failures: ${this.consecutiveFailures}`);
       this.logger.log(`   • Casts processed in last 24h: ${recentCasts}`);
-      this.logger.log(`   • Last processed cast: ${lastProcessedCast?.createdAt.toISOString() || 'None'}`);
-      
+      this.logger.log(
+        `   • Last processed cast: ${lastProcessedCast?.createdAt.toISOString() || 'None'}`,
+      );
+
       if (lastProcessedCast) {
-        const timeSinceLastCast = Date.now() - lastProcessedCast.createdAt.getTime();
-        const hoursSinceLastCast = Math.floor(timeSinceLastCast / (1000 * 60 * 60));
+        const timeSinceLastCast =
+          Date.now() - lastProcessedCast.createdAt.getTime();
+        const hoursSinceLastCast = Math.floor(
+          timeSinceLastCast / (1000 * 60 * 60),
+        );
         this.logger.log(`   • Hours since last cast: ${hoursSinceLastCast}`);
       }
-
     } catch (error) {
       this.logger.warn('⚠️ Could not gather system status:', error);
     }
   }
 
   // Manual trigger for testing or emergency processing
-  async triggerManualFetch(): Promise<{ success: boolean; message: string; duration?: number }> {
+  async triggerManualFetch(): Promise<{
+    success: boolean;
+    message: string;
+    duration?: number;
+  }> {
     if (this.isRunning) {
       return {
         success: false,
@@ -116,16 +140,18 @@ export class CastSchedulerService {
 
     try {
       this.logger.log('🔧 Manual cast fetching trigger initiated');
-      
+
       await this.castFetcherService.fetchAndProcessLatestCasts();
-      
+
       this.lastRunTime = new Date();
       this.consecutiveFailures = 0;
-      
+
       const duration = Date.now() - startTime;
-      
-      this.logger.log(`✅ Manual cast fetching completed successfully in ${duration}ms`);
-      
+
+      this.logger.log(
+        `✅ Manual cast fetching completed successfully in ${duration}ms`,
+      );
+
       return {
         success: true,
         message: `Manual cast fetching completed successfully in ${duration}ms`,
@@ -134,9 +160,12 @@ export class CastSchedulerService {
     } catch (error) {
       this.consecutiveFailures++;
       const duration = Date.now() - startTime;
-      
-      this.logger.error(`❌ Manual cast fetching failed after ${duration}ms:`, error);
-      
+
+      this.logger.error(
+        `❌ Manual cast fetching failed after ${duration}ms:`,
+        error,
+      );
+
       return {
         success: false,
         message: `Manual cast fetching failed: ${error.message}`,
@@ -169,19 +198,19 @@ export class CastSchedulerService {
   }
 
   // Health check for the scheduler
-  async healthCheck(): Promise<{ 
-    status: string; 
-    isRunning: boolean; 
-    lastRunTime: Date | null; 
+  async healthCheck(): Promise<{
+    status: string;
+    isRunning: boolean;
+    lastRunTime: Date | null;
     consecutiveFailures: number;
     systemHealth: any;
   }> {
     try {
       // Check underlying services health
       const fetcherHealth = await this.castFetcherService.healthCheck();
-      
-      const isHealthy = 
-        fetcherHealth.status === 'healthy' && 
+
+      const isHealthy =
+        fetcherHealth.status === 'healthy' &&
         this.consecutiveFailures < this.MAX_CONSECUTIVE_FAILURES;
 
       return {
@@ -191,7 +220,8 @@ export class CastSchedulerService {
         consecutiveFailures: this.consecutiveFailures,
         systemHealth: {
           fetcher: fetcherHealth,
-          maxFailuresReached: this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES,
+          maxFailuresReached:
+            this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES,
         },
       };
     } catch (error) {
