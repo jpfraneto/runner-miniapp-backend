@@ -222,15 +222,31 @@ export class SocialService {
     result: any,
   ): Promise<void> {
     try {
-      // Update the placeholder record with actual cast data
-      await this.farcasterCastRepository.update(
-        { farcasterCastHash: castHash },
-        {
-          userId: castData.author.fid,
-          imageUrl: `Processed cast from FID ${castData.author.fid}`,
-          caption: castData.text || 'Processed workout cast',
-        },
-      );
+      // Find the actual user ID from the database using the fid
+      const user = await this.userRepository.findOne({
+        where: { fid: castData.author.fid },
+      });
+
+      if (user) {
+        // Update the placeholder record with actual cast data
+        await this.farcasterCastRepository.update(
+          { farcasterCastHash: castHash },
+          {
+            userId: user.id, // Use the actual internal user ID, not the fid
+            imageUrl: `Processed cast from FID ${castData.author.fid}`,
+            caption: castData.text || 'Processed workout cast',
+          },
+        );
+      } else {
+        // If user not found, just update the non-userId fields
+        await this.farcasterCastRepository.update(
+          { farcasterCastHash: castHash },
+          {
+            imageUrl: `Processed cast from FID ${castData.author.fid}`,
+            caption: castData.text || 'Processed workout cast',
+          },
+        );
+      }
 
       this.processedCastsCache.add(castHash);
       console.log(`📝 Marked cast ${castHash} as fully processed in database`);

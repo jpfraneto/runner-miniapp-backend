@@ -1,187 +1,161 @@
-# Production Deployment Makefile for RUNNER API
-# Run with: make deploy-production
+# Clean Makefile for RUNNER API
+# Works with your current setup: Local MySQL + PM2 + Nginx
 
 # Variables
-SERVER_USER := root
-SERVER_HOST := 146.190.79.174
-DOMAIN := api.runnercoin.lat
 DATABASE_NAME := runnercoin_db
-DATABASE_USER := runner_user
-MYSQL_ROOT_PASSWORD := $(shell openssl rand -base64 32)
-DATABASE_PASSWORD := $(shell openssl rand -base64 32)
-JWT_SECRET := $(shell openssl rand -base64 64)
+DATABASE_USER := runner
+DATABASE_PASSWORD := RunnerDB2024!
+MYSQL_ROOT_PASSWORD := 1234
 
-# MySQL connection command
-MYSQL_CMD := docker-compose -f docker-compose.prod.yml exec -T mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD)
+# MySQL connection command (your actual setup)
+MYSQL_CMD := mysql -u root -p$(MYSQL_ROOT_PASSWORD)
 
-.PHONY: simple-deploy deploy-production local-setup docker-setup db-reset db-drop db-create db-status help check-mysql check-server-host restart status logs continue-deployment
+.PHONY: help dev-setup db-reset db-drop db-create db-status db-seed build start restart logs stop status deploy update
 
-# Simple one-command deployment (local execution)
-simple-deploy:
-	@echo "🚀 Starting simple deployment..."
-	@echo "📋 Make sure you've:"
-	@echo "   1. Updated your .env file with production values"
-	@echo "   2. Set your DNS to point api.runnercoin.lat to your droplet"
-	@echo "   3. Have SSH access to your droplet"
+# Show available commands
+help:
+	@echo "🏃 RUNNER API - Available Commands:"
 	@echo ""
-	@read -p "Enter your droplet IP address: " DROPLET_IP && \
-	scp .env root@$$DROPLET_IP:/tmp/.env && \
-	scp scripts/simple-deploy.sh root@$$DROPLET_IP:/tmp/simple-deploy.sh && \
-	ssh root@$$DROPLET_IP "chmod +x /tmp/simple-deploy.sh && /tmp/simple-deploy.sh"
+	@echo "📦 Development:"
+	@echo "  make dev-setup    - Install dependencies and build"
+	@echo "  make build        - Build the application"
+	@echo "  make start        - Start with PM2"
+	@echo "  make restart      - Restart PM2 process"
+	@echo "  make stop         - Stop PM2 process"
+	@echo "  make logs         - View PM2 logs"
+	@echo "  make status       - Check PM2 status"
+	@echo ""
+	@echo "🗄️  Database:"
+	@echo "  make db-status    - Check database connection"
+	@echo "  make db-create    - Create database and user"
+	@echo "  make db-drop      - Drop database (careful!)"
+	@echo "  make db-reset     - Drop, recreate, sync and seed database"
+	@echo "  make dev-db-reset - Quick reset for development (no confirmation)"
+	@echo "  make db-sync      - Sync database schema from entities"
+	@echo "  make db-seed      - Seed database with sample data"
+	@echo ""
+	@echo "🚀 Deployment:"
+	@echo "  make deploy       - Full deployment (build + restart)"
+	@echo "  make update       - Quick update (git pull + restart)"
 
-# Check if SERVER_HOST is set
-check-server-host:
-ifeq ($(SERVER_HOST),YOUR_DROPLET_IP_HERE)
-	@echo "❌ Please update SERVER_HOST in the Makefile with your actual server IP"
-	@echo "   Edit the Makefile and change 'YOUR_DROPLET_IP_HERE' to your server's IP address"
-	@exit 1
-endif
+# Development setup
+dev-setup:
+	@echo "📦 Setting up development environment..."
+	bun install
+	@echo "✅ Dependencies installed"
 
-# One-command production setup
-deploy-production: check-server-host docker-setup server-setup deploy-app setup-ssl setup-auto-deploy
-	@echo "🚀 Production deployment complete!"
-	@echo "📍 Your API is available at: https://$(DOMAIN)"
-	@echo "🔐 Database password saved in .env.production"
+# Build application
+build:
+	@echo "🔨 Building application..."
+	bun run build
+	@echo "✅ Build complete"
 
-# Initial server setup
-server-setup:
-	@echo "🔧 Setting up production server..."
-	scp scripts/server-setup.sh $(SERVER_USER)@$(SERVER_HOST):/tmp/
-	ssh $(SERVER_USER)@$(SERVER_HOST) "chmod +x /tmp/server-setup.sh && /tmp/server-setup.sh"
+# Start with PM2
+start: build
+	@echo "🚀 Starting RUNNER API with PM2..."
+	pm2 start ecosystem.config.js --env production
+	@echo "✅ Application started"
 
-# Deploy application (Git-based deployment)
-deploy-app:
-	@echo "📦 Deploying application from GitHub..."
-	scp .env.production $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
-	scp scripts/deploy.sh $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
-	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && chmod +x deploy.sh && ./deploy.sh"
-
-# Setup SSL with Let's Encrypt
-setup-ssl:
-	@echo "🔒 Setting up SSL certificate..."
-	scp scripts/ssl-setup.sh $(SERVER_USER)@$(SERVER_HOST):/tmp/
-	ssh $(SERVER_USER)@$(SERVER_HOST) "chmod +x /tmp/ssl-setup.sh && /tmp/ssl-setup.sh $(DOMAIN)"
-
-# Setup auto-deployment
-setup-auto-deploy:
-	@echo "🔄 Setting up auto-deployment..."
-	scp scripts/webhook-server.js $(SERVER_USER)@$(SERVER_HOST):/opt/runner-api/
-	scp scripts/webhook.service $(SERVER_USER)@$(SERVER_HOST):/etc/systemd/system/
-	ssh $(SERVER_USER)@$(SERVER_HOST) "systemctl enable webhook && systemctl start webhook"
-
-# Create local Docker setup
-docker-setup:
-	@echo "🐳 Creating Docker configuration..."
-	@echo "Creating .env.production file..."
-	@echo "NODE_ENV=production" > .env.production
-	@echo "PORT=3000" >> .env.production
-	@echo "DB_HOST=postgres" >> .env.production
-	@echo "DB_PORT=5432" >> .env.production
-	@echo "DB_USERNAME=$(DB_USER)" >> .env.production
-	@echo "DB_PASSWORD='$(DB_PASSWORD)'" >> .env.production
-	@echo "DB_NAME=$(DB_NAME)" >> .env.production
-	@echo "DB_REQUIRE_SSL=false" >> .env.production
-	@echo "JWT_SECRET='$(JWT_SECRET)'" >> .env.production
-	@echo "OPENAI_API_KEY=your_openai_key_here" >> .env.production
-	@echo "DIGITAL_OCEAN_SPACES_KEY=your_do_spaces_key_here" >> .env.production
-	@echo "DIGITAL_OCEAN_SPACES_SECRET=your_do_spaces_secret_here" >> .env.production
-	@echo "DIGITAL_OCEAN_SPACES_ENDPOINT=your_do_spaces_endpoint_here" >> .env.production
-	@echo "DIGITAL_OCEAN_SPACES_BUCKET=your_do_spaces_bucket_here" >> .env.production
-	@echo "NEYNAR_API_KEY=your_neynar_api_key_here" >> .env.production
-
-# Local development setup  
-local-setup:
-	@echo "💻 Setting up local development..."
-	docker-compose up -d postgres
-	npm install
-	npm run build
-
-# Emergency restart
+# Restart PM2 process
 restart:
-	@echo "🧹 Cleaning up..."
-	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose down && docker system prune -f"
+	@echo "🔄 Restarting RUNNER API..."
+	pm2 restart runner-api
+	@echo "✅ Application restarted"
 
-# Check deployment status
-status:
-	@echo "📊 Checking deployment status..."
-	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose ps && systemctl status nginx"
+# Stop PM2 process
+stop:
+	@echo "⏹️  Stopping RUNNER API..."
+	pm2 stop runner-api
+	@echo "✅ Application stopped"
 
 # View logs
 logs:
 	@echo "📝 Showing application logs..."
-	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose logs -f --tail=100 api"
+	pm2 logs runner-api --lines 50
 
-# Continue deployment (if server setup already completed)
-continue-deployment: check-server-host deploy-app setup-ssl setup-auto-deploy
-	@echo "🚀 Continuing deployment from where it left off..."
-	@echo "📍 Your API should be available at: https://$(DOMAIN)"
-	@echo "🔄 Restarting services..."
-	ssh $(SERVER_USER)@$(SERVER_HOST) "cd /opt/runner-api && docker-compose restart"
+# Check status
+status:
+	@echo "📊 Checking application status..."
+	pm2 status
+	@echo ""
+	@echo "🌐 Testing API health..."
+	@curl -s http://localhost:3000/health || echo "❌ API not responding"
 
-# Check MySQL connection method
-check-mysql:
-	@echo "Checking available MySQL connection methods..."
-	@if command -v mysql >/dev/null 2>&1; then \
-		echo "✓ mysql command available"; \
-	else \
-		echo "✗ mysql command not found"; \
-	fi
-	@if command -v docker >/dev/null 2>&1; then \
-		echo "✓ docker available"; \
-		if docker ps --format "table {{.Names}}" | grep -q mysql; then \
-			echo "✓ MySQL container found"; \
-		else \
-			echo "✗ No MySQL container running"; \
-		fi \
-	else \
-		echo "✗ docker not found"; \
-	fi
-	@if command -v docker-compose >/dev/null 2>&1; then \
-		echo "✓ docker-compose available"; \
-	else \
-		echo "✗ docker-compose not found"; \
-	fi
-
-# Reset database (drop and recreate)
-db-reset: db-drop db-create db-sync db-seed
-	@echo "Database '$(DATABASE_NAME)' has been reset and seeded successfully!"
-
-# Drop the database
-db-drop:
-	@echo "Dropping database '$(DATABASE_NAME)'..."
-	@$(MYSQL_CMD) -e "DROP DATABASE IF EXISTS $(DATABASE_NAME);"
-	@echo "Database dropped."
-
-# Create the database
-db-create:
-	@echo "Creating database '$(DATABASE_NAME)'..."
-	@$(MYSQL_CMD) -e "CREATE DATABASE $(DATABASE_NAME);"
-	@echo "Database created."
-
-# Check database status
+# Check database connection
 db-status:
-	@echo "Checking database status..."
-	@$(MYSQL_CMD) -e "SHOW DATABASES LIKE '$(DATABASE_NAME)';"
+	@echo "📊 Checking database connection..."
+	@$(MYSQL_CMD) -e "SELECT 'Database connection successful' as status;" 2>/dev/null || echo "❌ Database connection failed"
+	@$(MYSQL_CMD) -e "SHOW DATABASES LIKE '$(DATABASE_NAME)';" 2>/dev/null || echo "❌ Database '$(DATABASE_NAME)' not found"
 
-# Sync database schema (create tables)
+# Create database and user
+db-create:
+	@echo "🗄️  Creating database and user..."
+	@$(MYSQL_CMD) -e "CREATE DATABASE IF NOT EXISTS $(DATABASE_NAME);" || echo "❌ Failed to create database"
+	@$(MYSQL_CMD) -e "CREATE USER IF NOT EXISTS '$(DATABASE_USER)'@'localhost' IDENTIFIED BY '$(DATABASE_PASSWORD)';" || echo "ℹ️  User might already exist"
+	@$(MYSQL_CMD) -e "GRANT ALL PRIVILEGES ON $(DATABASE_NAME).* TO '$(DATABASE_USER)'@'localhost';" || echo "❌ Failed to grant privileges"
+	@$(MYSQL_CMD) -e "FLUSH PRIVILEGES;" || echo "❌ Failed to flush privileges"
+	@echo "✅ Database and user created"
+
+# Drop database (dangerous!)
+db-drop:
+	@echo "⚠️  WARNING: This will delete ALL data in $(DATABASE_NAME)!"
+	@read -p "Are you sure? Type 'yes' to continue: " confirm && [ "$confirm" = "yes" ] || exit 1
+	@echo "🗑️  Dropping database..."
+	@$(MYSQL_CMD) -e "DROP DATABASE IF EXISTS $(DATABASE_NAME);" || echo "❌ Failed to drop database"
+	@echo "✅ Database dropped"
+
+# Force drop database (no confirmation - for development)
+db-drop-force:
+	@echo "🗑️  Force dropping database..."
+	@$(MYSQL_CMD) -e "DROP DATABASE IF EXISTS $(DATABASE_NAME);" || echo "❌ Failed to drop database"
+	@echo "✅ Database dropped"
+
+# Sync database schema (create tables from entities)
 db-sync:
-	@echo "Syncing database schema..."
-	@npx ts-node src/scripts/sync-database.ts
+	@echo "🔄 Syncing database schema..."
+	@if [ -f "src/scripts/sync-database.ts" ]; then \
+		npx ts-node src/scripts/sync-database.ts; \
+	else \
+		echo "❌ sync-database.ts not found at src/scripts/"; \
+		echo "Tables will be created automatically when app starts with synchronize: true"; \
+	fi
 
-# Seed the database with workout data
+# Reset database (drop, recreate, sync, and seed)
+db-reset: db-drop db-create db-sync db-seed
+	@echo "✅ Database reset complete with seeded data!"
+
+# Quick reset without confirmation (for development)
+dev-db-reset: db-drop-force db-create db-sync db-seed
+	@echo "✅ Development database reset complete!"
+
+# Seed database with workout data
 db-seed:
-	@echo "Seeding database with workout data..."
-	@npx ts-node src/core/training/services/seed-database.ts
+	@echo "🌱 Seeding database with workout data..."
+	@if [ -f "src/core/training/services/seed-database.ts" ]; then \
+		npx ts-node src/core/training/services/seed-database.ts; \
+	elif [ -f "src/scripts/seed-database.ts" ]; then \
+		npx ts-node src/scripts/seed-database.ts; \
+	elif [ -f "scripts/seed-database.js" ]; then \
+		node scripts/seed-database.js; \
+	else \
+		echo "❌ No seed script found"; \
+		echo "Expected locations:"; \
+		echo "  - src/core/training/services/seed-database.ts"; \
+		echo "  - src/scripts/seed-database.ts"; \
+		echo "  - scripts/seed-database.js"; \
+	fi
 
-# Show available commands
-help:
-	@echo "Available commands:"
-	@echo "  make db-reset   - Drop, recreate and seed the database"
-	@echo "  make db-drop    - Drop the database"
-	@echo "  make db-create  - Create the database"
-	@echo "  make db-seed    - Seed the database with workout data"
-	@echo "  make db-status  - Check if database exists"
-	@echo "  make help        - Show this help message"
+# Full deployment
+deploy: build restart
+	@echo "🚀 Deployment complete!"
+	@echo "📍 API should be available at: https://api.runnercoin.lat"
+	@$(MAKE) status
+
+# Quick update (git pull + restart)
+update:
+	@echo "📥 Pulling latest changes..."
+	git pull origin main
+	@$(MAKE) deploy
 
 # Default target
 all: help
