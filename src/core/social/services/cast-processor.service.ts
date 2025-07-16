@@ -1337,19 +1337,37 @@ Generate a similar summary highlighting the most impressive aspects of this work
       const savedRunningSession =
         await this.runningSessionRepository.save(runningSession);
 
-      // Create FarcasterCast
-      const farcasterCast = this.farcasterCastRepository.create({
-        userId: user.id,
-        completedRunId: savedRunningSession.id,
-        farcasterCastHash: castData.hash,
-        imageUrl: castData.embeds[0]?.url || '',
-        caption: castData.text,
-        likes: Number(castData.reactions.likes_count || 0),
-        comments: Number(castData.replies.count || 0),
-        shares: Number(castData.reactions.recasts_count || 0),
+      // Update existing placeholder FarcasterCast record
+      const existingCast = await this.farcasterCastRepository.findOne({
+        where: { farcasterCastHash: castData.hash },
       });
 
-      await this.farcasterCastRepository.save(farcasterCast);
+      if (existingCast) {
+        // Update the placeholder with actual data
+        existingCast.userId = user.id;
+        existingCast.completedRunId = savedRunningSession.id;
+        existingCast.imageUrl = castData.embeds[0]?.url || '';
+        existingCast.caption = castData.text;
+        existingCast.likes = Number(castData.reactions.likes_count || 0);
+        existingCast.comments = Number(castData.replies.count || 0);
+        existingCast.shares = Number(castData.reactions.recasts_count || 0);
+        
+        await this.farcasterCastRepository.save(existingCast);
+      } else {
+        // Fallback: create new record if placeholder doesn't exist
+        const farcasterCast = this.farcasterCastRepository.create({
+          userId: user.id,
+          completedRunId: savedRunningSession.id,
+          farcasterCastHash: castData.hash,
+          imageUrl: castData.embeds[0]?.url || '',
+          caption: castData.text,
+          likes: Number(castData.reactions.likes_count || 0),
+          comments: Number(castData.replies.count || 0),
+          shares: Number(castData.reactions.recasts_count || 0),
+        });
+
+        await this.farcasterCastRepository.save(farcasterCast);
+      }
 
       // Update user stats
       user.totalRuns = Number(user.totalRuns) + 1;
