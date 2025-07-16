@@ -3,7 +3,7 @@
 
 # Variables
 SERVER_USER := root
-SERVER_HOST := YOUR_DROPLET_IP_HERE
+SERVER_HOST := 146.190.79.174
 DOMAIN := api.runnercoin.lat
 DATABASE_NAME := runnercoin_db
 DATABASE_USER := runner_user

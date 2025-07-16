@@ -15,7 +15,7 @@ export class FarcasterCast {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ nullable: true })
   userId: number;
 
   @Column({ nullable: true })
@@ -46,7 +46,7 @@ export class FarcasterCast {
   updatedAt: Date;
 
   // Relationships
-  @ManyToOne(() => User, (user) => user.farcasterCasts)
+  @ManyToOne(() => User, (user) => user.farcasterCasts, { nullable: true })
   @JoinColumn({ name: 'userId' })
   user: User;
 

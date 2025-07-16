@@ -174,7 +174,7 @@ export class SocialService {
       // This prevents race conditions where multiple webhooks try to process the same cast
       const placeholderCast = new FarcasterCast();
       placeholderCast.farcasterCastHash = castHash;
-      placeholderCast.userId = 0; // Placeholder value
+      placeholderCast.userId = null; // Placeholder value - nullable to avoid foreign key constraint
       placeholderCast.imageUrl = 'PROCESSING_PLACEHOLDER'; // Mark as placeholder
       placeholderCast.caption = 'PROCESSING_PLACEHOLDER'; // Mark as placeholder
 
