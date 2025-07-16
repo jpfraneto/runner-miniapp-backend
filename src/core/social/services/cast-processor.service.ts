@@ -778,7 +778,8 @@ Generate a similar summary highlighting the most impressive aspects of this work
         messages: [
           {
             role: 'system',
-            content: 'You are a running coach who creates engaging, concise workout summaries for notifications. Keep them under 100 characters and highlight the most impressive stats.',
+            content:
+              'You are a running coach who creates engaging, concise workout summaries for notifications. Keep them under 100 characters and highlight the most impressive stats.',
           },
           {
             role: 'user',
@@ -798,7 +799,7 @@ Generate a similar summary highlighting the most impressive aspects of this work
       return summary;
     } catch (error) {
       console.error('❌ Error generating workout summary:', error);
-      
+
       // Fallback to basic summary
       const fallbackSummary = this.generateBasicWorkoutSummary(workoutData);
       console.log('📝 Using fallback summary:', fallbackSummary);
@@ -837,12 +838,15 @@ Generate a similar summary highlighting the most impressive aspects of this work
 
       const username = castData.author.username;
       const title = `${username} finished a new running session!`;
-      
+
       // Generate AI-powered workout summary for the notification body
-      const workoutSummary = await this.generateWorkoutSummary(castData, workoutData);
-      
+      const workoutSummary = await this.generateWorkoutSummary(
+        castData,
+        workoutData,
+      );
+
       const targetUrl = `${this.config.isProduction ? 'https://api.runnercoin.lat' : 'https://poiesis.anky.app'}/embeds/run/${castData.hash}`;
-      
+
       // Create unique idempotency key based on cast hash
       const idempotencyKey = `running_session_${castData.hash}`;
 
