@@ -1,0 +1,172 @@
+# Production Makefile for RUNNER API
+# Make sure to update SERVER_IP with your actual DigitalOcean droplet IP
+
+SERVER_IP := YOUR_DROPLET_IP_HERE
+SERVER_USER := root
+DOMAIN := api.runnercoin.lat
+APP_DIR := /opt/runner-api
+
+.PHONY: help deploy setup-server update-env deploy-code restart logs status health ssl-renew backup restore clean
+
+# Default target
+help:
+	@echo "🚀 RUNNER API Production Deployment"
+	@echo ""
+	@echo "Available commands:"
+	@echo "  make setup-server    - Initial server setup and deployment"
+	@echo "  make deploy-code     - Deploy code changes"
+	@echo "  make update-env      - Update environment variables"
+	@echo "  make restart         - Restart all services"
+	@echo "  make logs            - View application logs"
+	@echo "  make status          - Check service status"
+	@echo "  make health          - Check API health"
+	@echo "  make ssl-renew       - Renew SSL certificates"
+	@echo "  make backup          - Backup database"
+	@echo "  make restore         - Restore database from backup"
+	@echo "  make clean           - Clean up old containers and images"
+	@echo ""
+	@echo "⚠️  Update SERVER_IP in this Makefile before running any commands"
+
+# Check if SERVER_IP is set
+check-server:
+ifeq ($(SERVER_IP),YOUR_DROPLET_IP_HERE)
+	@echo "❌ Please update SERVER_IP in Makefile.prod with your actual droplet IP"
+	@exit 1
+endif
+
+# Complete server setup and deployment
+setup-server: check-server
+	@echo "🔧 Setting up production server..."
+	@echo "📁 Creating application directory..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "mkdir -p $(APP_DIR)"
+	
+	@echo "📦 Copying deployment files..."
+	scp deploy.sh $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp docker-compose.prod.yml $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp Dockerfile.prod $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp -r nginx $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp -r src $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp package.json $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp bun.lockb $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/ 2>/dev/null || echo "No bun.lockb found, skipping..."
+	scp tsconfig.json $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp nest-cli.json $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	
+	@echo "🚀 Running deployment script..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && chmod +x deploy.sh && ./deploy.sh"
+	
+	@echo "✅ Setup complete! Your API should be available at https://$(DOMAIN)"
+	@echo "⚠️  Don't forget to:"
+	@echo "   1. Update your DNS to point $(DOMAIN) to $(SERVER_IP)"
+	@echo "   2. Add your API keys to .env.production on the server"
+	@echo "   3. Restart the application after updating environment variables"
+
+# Deploy code changes
+deploy-code: check-server
+	@echo "📦 Deploying code changes..."
+	scp -r src $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp package.json $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	scp bun.lockb $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/ 2>/dev/null || echo "No bun.lockb found, skipping..."
+	
+	@echo "🔨 Building and restarting application..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml build --no-cache app && docker-compose -f docker-compose.prod.yml up -d app"
+	
+	@echo "✅ Code deployment complete!"
+
+# Update environment variables
+update-env: check-server
+	@echo "🔧 Updating environment variables..."
+	@if [ ! -f .env.production ]; then \
+		echo "❌ .env.production file not found locally"; \
+		echo "   Create .env.production with your production environment variables"; \
+		exit 1; \
+	fi
+	scp .env.production $(SERVER_USER)@$(SERVER_IP):$(APP_DIR)/
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml restart app"
+	@echo "✅ Environment variables updated and application restarted"
+
+# Restart all services
+restart: check-server
+	@echo "🔄 Restarting all services..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml restart"
+	@echo "✅ All services restarted"
+
+# View application logs
+logs: check-server
+	@echo "📋 Viewing application logs..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml logs -f --tail=100 app"
+
+# Check service status
+status: check-server
+	@echo "📊 Checking service status..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml ps"
+	@echo ""
+	ssh $(SERVER_USER)@$(SERVER_IP) "systemctl status nginx --no-pager"
+
+# Check API health
+health: check-server
+	@echo "🏥 Checking API health..."
+	@curl -f https://$(DOMAIN)/health || echo "❌ Health check failed"
+	@echo ""
+	@curl -f https://$(DOMAIN) || echo "❌ API unreachable"
+
+# Renew SSL certificates
+ssl-renew: check-server
+	@echo "🔒 Renewing SSL certificates..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "certbot renew && cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml restart nginx"
+	@echo "✅ SSL certificates renewed"
+
+# Backup database
+backup: check-server
+	@echo "💾 Creating database backup..."
+	@BACKUP_FILE="backup-$(shell date +%Y%m%d-%H%M%S).sql" && \
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml exec -T db mysqldump -u root -p\$$(grep DB_ROOT_PASSWORD .env.production | cut -d '=' -f2) runnercoin_db > $$BACKUP_FILE" && \
+	echo "✅ Database backup created: $$BACKUP_FILE"
+
+# Restore database from backup
+restore: check-server
+	@echo "🔄 Available backup files:"
+	@ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && ls -la backup-*.sql 2>/dev/null || echo 'No backup files found'"
+	@echo ""
+	@read -p "Enter backup filename to restore: " BACKUP_FILE && \
+	if [ -n "$$BACKUP_FILE" ]; then \
+		ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml exec -T db mysql -u root -p\$$(grep DB_ROOT_PASSWORD .env.production | cut -d '=' -f2) runnercoin_db < $$BACKUP_FILE"; \
+		echo "✅ Database restored from $$BACKUP_FILE"; \
+	else \
+		echo "❌ No backup file specified"; \
+	fi
+
+# Clean up old containers and images
+clean: check-server
+	@echo "🧹 Cleaning up old containers and images..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "docker system prune -f"
+	@echo "✅ Cleanup complete"
+
+# Database operations (similar to your local Makefile)
+db-reset: check-server
+	@echo "🗃️ Resetting production database..."
+	@echo "⚠️  This will delete ALL data in the production database!"
+	@read -p "Are you sure? Type 'yes' to continue: " CONFIRM && \
+	if [ "$$CONFIRM" = "yes" ]; then \
+		ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml exec -T db mysql -u root -p\$$(grep DB_ROOT_PASSWORD .env.production | cut -d '=' -f2) -e 'DROP DATABASE IF EXISTS runnercoin_db; CREATE DATABASE runnercoin_db;'"; \
+		ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml restart app"; \
+		echo "✅ Production database reset complete"; \
+	else \
+		echo "❌ Database reset cancelled"; \
+	fi
+
+db-status: check-server
+	@echo "📊 Checking database status..."
+	ssh $(SERVER_USER)@$(SERVER_IP) "cd $(APP_DIR) && docker-compose -f docker-compose.prod.yml exec -T db mysql -u root -p\$$(grep DB_ROOT_PASSWORD .env.production | cut -d '=' -f2) -e 'SHOW DATABASES; SELECT COUNT(*) as user_count FROM runnercoin_db.users; SELECT COUNT(*) as session_count FROM runnercoin_db.running_sessions;'"
+
+# Monitor system resources
+monitor: check-server
+	@echo "📈 System resource usage:"
+	ssh $(SERVER_USER)@$(SERVER_IP) "echo '=== CPU and Memory ===' && top -bn1 | head -5 && echo '' && echo '=== Disk Usage ===' && df -h && echo '' && echo '=== Docker Stats ===' && docker stats --no-stream"
+
+# Quick deployment (for frequent updates)
+quick-deploy: deploy-code
+	@echo "⚡ Quick deployment complete!"
+
+# Full deployment with all steps
+full-deploy: update-env deploy-code restart health
+	@echo "🎉 Full deployment complete!"

@@ -10,6 +10,7 @@ import { UserRoleEnum } from '../../../models/User/User.types';
 import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
 import { FarcasterCast } from '../../../models/FarcasterCast/FarcasterCast.model';
 import { UnitType } from '../../../models/RunningSession/RunningSession.model';
+import { NotificationService } from '../../notification/services/notification.service';
 
 // Neynar client for posting replies
 import { NeynarAPIClient, Configuration } from '@neynar/nodejs-sdk';
@@ -238,6 +239,7 @@ export class CastProcessorService {
     private readonly runningSessionRepository: Repository<RunningSession>,
     @InjectRepository(FarcasterCast)
     private readonly farcasterCastRepository: Repository<FarcasterCast>,
+    private readonly notificationService: NotificationService,
   ) {
     console.log('🔧 Initializing CastProcessorService');
     this.openai = new OpenAI({
@@ -316,7 +318,7 @@ export class CastProcessorService {
       );
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         max_tokens: 200,
         messages: [
           {
@@ -743,6 +745,121 @@ export class CastProcessorService {
     }
   }
 
+  /**
+   * Generates an AI-powered workout summary for notifications
+   */
+  private async generateWorkoutSummary(
+    castData: FarcasterCastData,
+    workoutData: CastWorkoutData,
+  ): Promise<string> {
+    try {
+      console.log('🤖 Generating workout summary for notification');
+
+      const prompt = `Create a brief, engaging summary of this running session for a notification. Focus on the key stats and make it motivational but concise (max 100 characters).
+
+WORKOUT DATA:
+- Distance: ${workoutData.distance || 'N/A'}km
+- Duration: ${workoutData.duration || 'N/A'} minutes
+- Pace: ${workoutData.pace || 'N/A'}
+- Calories: ${workoutData.calories || 'N/A'}
+- Heart Rate: ${workoutData.avgHeartRate || 'N/A'} bpm
+- Runner's message: "${castData.text || ''}"
+
+Examples of good summaries:
+- "Crushed 5.2km in 28min with 145bpm avg - consistent pace!"
+- "Morning 3.8km at 5:45/km pace - steady effort paid off!"
+- "Interval training: 8.1km with varied paces, 520 calories burned!"
+
+Generate a similar summary highlighting the most impressive aspects of this workout.`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 100,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a running coach who creates engaging, concise workout summaries for notifications. Keep them under 100 characters and highlight the most impressive stats.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+      });
+
+      const summary = response.choices[0]?.message?.content?.trim();
+
+      if (!summary) {
+        throw new Error('No summary generated');
+      }
+
+      console.log('✅ Generated workout summary:', summary);
+      return summary;
+    } catch (error) {
+      console.error('❌ Error generating workout summary:', error);
+      
+      // Fallback to basic summary
+      const fallbackSummary = this.generateBasicWorkoutSummary(workoutData);
+      console.log('📝 Using fallback summary:', fallbackSummary);
+      return fallbackSummary;
+    }
+  }
+
+  /**
+   * Generates a basic workout summary when AI fails
+   */
+  private generateBasicWorkoutSummary(workoutData: CastWorkoutData): string {
+    const distance = workoutData.distance;
+    const duration = workoutData.duration;
+    const pace = workoutData.pace;
+
+    if (distance && duration && pace) {
+      return `${distance}km in ${duration}min at ${pace} pace`;
+    } else if (distance && duration) {
+      return `${distance}km run completed in ${duration} minutes`;
+    } else if (distance) {
+      return `${distance}km running session completed`;
+    } else {
+      return `New running session completed`;
+    }
+  }
+
+  /**
+   * Sends notification to all users about a completed running session
+   */
+  private async sendRunningSessionNotification(
+    castData: FarcasterCastData,
+    workoutData: CastWorkoutData,
+  ): Promise<void> {
+    try {
+      console.log('📢 Sending running session notification to all users');
+
+      const username = castData.author.username;
+      const title = `${username} finished a new running session!`;
+      
+      // Generate AI-powered workout summary for the notification body
+      const workoutSummary = await this.generateWorkoutSummary(castData, workoutData);
+      
+      const targetUrl = `${this.config.isProduction ? 'https://api.runnercoin.lat' : 'https://poiesis.anky.app'}/embeds/run/${castData.hash}`;
+      
+      // Create unique idempotency key based on cast hash
+      const idempotencyKey = `running_session_${castData.hash}`;
+
+      await this.notificationService.sendNotificationToAllUsers(
+        title,
+        workoutSummary,
+        targetUrl,
+        idempotencyKey,
+      );
+
+      console.log('✅ Successfully queued running session notification');
+    } catch (error) {
+      console.error('❌ Error sending running session notification:', error);
+      // Don't throw - we don't want notification failures to break the main cast processing
+    }
+  }
+
   private async postReplyToFarcaster(
     parentCastHash: string,
     replyText: string,
@@ -863,6 +980,9 @@ export class CastProcessorService {
 
         // Reply to the cast with encouragement
         await this.replyToCast(castData, extractedData);
+
+        // Send notification to all users about the completed running session
+        await this.sendRunningSessionNotification(castData, extractedData);
       }
 
       return extractedData;

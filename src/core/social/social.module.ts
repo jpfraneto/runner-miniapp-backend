@@ -9,6 +9,7 @@ import { SocialController } from './social.controller';
 import { SocialService } from './services/social.service';
 import { CastProcessorService } from './services/cast-processor.service';
 import { AuthModule } from '../auth/auth.module'; // <- Add this
+import { NotificationModule } from '../notification/notification.module';
 
 // Models
 import { User } from '../../models';
@@ -19,6 +20,7 @@ import { FarcasterCast } from '../../models/FarcasterCast/FarcasterCast.model';
   imports: [
     TypeOrmModule.forFeature([User, RunningSession, FarcasterCast]),
     AuthModule,
+    NotificationModule,
   ],
   controllers: [SocialController],
   providers: [SocialService, CastProcessorService],

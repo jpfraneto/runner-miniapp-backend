@@ -486,6 +486,63 @@ export class NotificationService {
   }
 
   /**
+   * Sends notification to all users with notifications enabled
+   * Used for broadcasting when someone completes a running session
+   */
+  async sendNotificationToAllUsers(
+    title: string,
+    body: string,
+    targetUrl: string = 'https://runnercoin.lat',
+    customIdempotencyKey?: string,
+  ): Promise<void> {
+    try {
+      if (!this.config.notifications.enabled) {
+        this.logger.log(
+          'Notifications disabled globally, skipping broadcast notification',
+        );
+        return;
+      }
+
+      this.logger.log('Sending notification to all users with notifications enabled');
+
+      const usersWithNotifications = await this.userRepository.find({
+        where: {
+          notificationsEnabled: true,
+          notificationToken: Not(IsNull()),
+        },
+        select: ['id', 'username', 'fid'],
+      });
+
+      if (usersWithNotifications.length === 0) {
+        this.logger.log('No users with notifications enabled for broadcast');
+        return;
+      }
+
+      const timestamp = new Date().toISOString();
+      const baseIdempotencyKey = customIdempotencyKey || `broadcast_${timestamp}`;
+
+      // Queue notifications for all users
+      for (const user of usersWithNotifications) {
+        await this.queueNotification(
+          user.id,
+          NotificationTypeEnum.WEEKLY_ACHIEVEMENT,
+          title,
+          body,
+          targetUrl,
+          new Date(),
+          `${baseIdempotencyKey}_${user.id}`, // Unique per user
+        );
+      }
+
+      this.logger.log(
+        `Queued broadcast notification for ${usersWithNotifications.length} users`,
+      );
+    } catch (error) {
+      this.logger.error('Error sending notification to all users:', error);
+    }
+  }
+
+  /**
    * Queues weekly achievement announcements for users
    */
   async queueWeeklyAchievementAnnouncements(): Promise<void> {
