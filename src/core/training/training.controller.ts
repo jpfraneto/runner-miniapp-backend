@@ -242,6 +242,16 @@ export class TrainingController {
         );
       }
 
+      // Handle user creation errors
+      if (error.message?.includes('Failed to create user from Neynar')) {
+        return hasError(
+          res,
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          'postRunningSessionByCastHash',
+          'Failed to create user account from Farcaster data',
+        );
+      }
+
       // Update running session status to FAILED if it exists
       try {
         await this.updateRunningSessionStatus(

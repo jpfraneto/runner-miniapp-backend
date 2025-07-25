@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, MoreThan } from 'typeorm';
 
 // Models
 import {
@@ -20,6 +20,7 @@ import {
 // Services
 import { NotificationService } from '../../notification/services/notification.service';
 import { NotificationTypeEnum } from '../../../models/NotificationQueue/NotificationQueue.types';
+import { UserService } from '../../user/services/user.service';
 
 /**
  * Training service for managing training plans and weekly missions.
@@ -44,6 +45,7 @@ export class TrainingService {
     @InjectRepository(RunningSession)
     private readonly runningSessionRepository: Repository<RunningSession>,
     private readonly notificationService: NotificationService,
+    private readonly userService: UserService,
   ) {}
 
   /**
@@ -141,6 +143,7 @@ export class TrainingService {
       skip: offset,
       take: limit,
       relations: ['user'],
+      where: { distanceMeters: MoreThan(0) },
     });
 
     // Calculate pagination metadata
@@ -413,6 +416,7 @@ export class TrainingService {
     const queryBuilder = this.runningSessionRepository
       .createQueryBuilder('session')
       .select('session.fid', 'fid')
+      .where('session.distanceMeters > 0')
       .addSelect('user.username', 'username')
       .addSelect('user.pfpUrl', 'pfpUrl')
       .addSelect('SUM(session.distanceMeters) / 1000', 'totalDistance') // Convert meters to km
@@ -1221,16 +1225,9 @@ export class TrainingService {
   ): Promise<RunningSession> {
     try {
       // Find or create user first
-      const user = await this.userRepository.findOne({ where: { fid } });
-
-      if (!user) {
-        console.log(
-          `👤 User with FID ${fid} not found, cannot create session without user data`,
-        );
-        throw new NotFoundException(
-          `User with FID ${fid} not found. User must be created first.`,
-        );
-      }
+      console.log(`👤 Looking up or creating user with FID ${fid}...`);
+      const user = await this.userService.getOrCreateUserByFid(fid);
+      console.log(`✅ User found/created: ${user.username} (FID: ${fid})`);
 
       // Check if a session with this cast hash already exists
       const existingSession = await this.runningSessionRepository.findOne({
