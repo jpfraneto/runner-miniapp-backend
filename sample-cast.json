@@ -1,0 +1,41 @@
+{
+  "cast": {
+    "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "timestamp": "2024-01-15T10:30:00.000Z",
+    "text": "Just finished my morning run! 🏃‍♂️ Great pace today, feeling strong! #running #fitness",
+    "author": {
+      "fid": 194,
+      "username": "rish.eth",
+      "pfp_url": "https://imagedelivery.net/your-pfp-url.jpg"
+    },
+    "embeds": [
+      {
+        "url": "https://imagedelivery.net/your-workout-screenshot.jpg",
+        "metadata": {
+          "content_type": "image/jpeg"
+        }
+      }
+    ],
+    "reactions": {
+      "likes": [
+        {
+          "fid": 123,
+          "username": "user1.eth"
+        },
+        {
+          "fid": 456,
+          "username": "user2.eth"
+        }
+      ],
+      "recasts": [
+        {
+          "fid": 789,
+          "username": "user3.eth"
+        }
+      ]
+    },
+    "replies": {
+      "count": 2
+    }
+  }
+}

@@ -1,0 +1,390 @@
+# RUNNER API - Farcaster Running Miniapp Backend - Master Context
+
+## Project Overview
+
+RUNNER is a Farcaster miniapp that transforms running into a social, gamified experience. Users can track workouts by uploading screenshots, earn $RUNNER tokens, maintain streaks, and share achievements with the Farcaster community. The core innovation is AI-powered screenshot processing that automatically extracts workout data from any running app.
+
+## Current System Architecture
+
+### Technology Stack
+- **Framework**: NestJS with TypeScript
+- **Database**: MySQL with TypeORM
+- **AI Processing**: OpenAI GPT-4 Vision (gpt-4o-mini)
+- **Image Storage**: DigitalOcean Spaces with CDN
+- **Authentication**: Farcaster QuickAuth
+- **Social Integration**: Neynar API for Farcaster interactions
+
+### Production Configuration
+```typescript
+// Database Configuration with SSL Support
+TypeORM.forRoot({
+  type: 'mysql',
+  ssl: getConfig().db.requireSSL ? { rejectUnauthorized: false } : false,
+  synchronize: true, // Currently enabled for development
+  logging: getConfig().isProduction ? false : 'all',
+  extra: { connectionLimit: 10 }
+})
+```
+
+## Core Innovation: Screenshot-to-Data Pipeline
+
+### GPT-4 Vision Integration (ScreenshotProcessorService)
+```typescript
+// Core workflow: User uploads screenshots → AI extracts data → Social sharing
+1. User takes screenshots from running apps (Strava, Nike Run Club, Garmin, etc.)
+2. GPT-4 Vision processes up to 4 screenshots simultaneously
+3. AI extracts: distance, time, pace, calories, heart rate, splits, weather, route
+4. System creates RunningSession with confidence scoring
+5. User verifies data and shares achievements
+```
+
+### Screenshot Processing Flow
+```typescript
+// Upload & Processing Pipeline
+POST /training-service/runner-workflow/upload-run → 
+  → Store in DigitalOcean Spaces →
+  → GPT-4 Vision extraction →
+  → RunningSession creation →
+  → UserStats update →
+  → Personal best detection →
+  → Validation and ban system checks
+```
+
+### AI Data Extraction
+```typescript
+interface ExtractedWorkoutData {
+  distance?: number;           // in km
+  duration?: number;           // in minutes
+  pace?: string;              // format: "mm:ss/km" or "mm:ss/mi"
+  calories?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  confidence: number;         // 0-1 confidence score
+  extractedText?: string[];   // raw OCR text for debugging
+  isWorkoutImage?: boolean;   // indicates if this is actually a workout
+  units?: 'km' | 'mi';       // distance units
+  intervals?: any[];          // Array of interval objects
+  elevationGain?: number;
+  steps?: number;
+}
+```
+
+## Database Models & Relationships
+
+### Current Implementation (Updated)
+
+#### User Entity - Core user data + quick stats
+```typescript
+@Entity('users')
+export class User {
+  // Farcaster Identity
+  fid: number;                    // Unique Farcaster ID
+  username: string;
+  pfpUrl: string;
+  
+
+  
+  // Quick Stats (Denormalized for performance)
+  totalRuns: number;
+  totalDistance: number;          // decimal(8,2)
+  totalTimeMinutes: number;
+  currentStreak: number;
+  longestStreak: number;
+  
+  // Current Status
+  lastRunDate: Date;
+  hasActiveTrainingPlan: boolean;
+  hasCompletedOnboarding: boolean;
+  
+  // Workout Validation & Ban System
+  invalidWorkoutSubmissions: number;
+  isBanned: boolean;
+  bannedAt: Date;
+  banExpiresAt: Date;
+  totalBans: number;
+  
+  // Preferences
+  unitPreference: 'metric' | 'imperial';
+  fitnessLevel: 'beginner' | 'intermediate' | 'advanced';
+  coachPersonality: 'motivational' | 'supportive' | 'strict';
+  
+  // Relationships
+  trainingPlans: TrainingPlan[];
+  runningSessions: RunningSession[];
+  detailedStats: UserStats;       // 1:1 relationship
+}
+```
+
+#### RunningSession Entity - Actual workout data
+```typescript
+@Entity('running_sessions')
+export class RunningSession {
+  id: number;
+  userId: number;
+  fid: number;                    // Farcaster ID
+  
+  // Core Workout Data
+  distance: number;               // decimal(8,3)
+  duration: number;               // in minutes
+  pace: string;                   // "mm:ss/km" or "mm:ss/mi"
+  units: UnitType;               // KM or MI enum
+  
+  // AI Processing Results
+  confidence: number;             // decimal(3,2) - 0-1 range
+  extractedText: string[];        // JSON array
+  isWorkoutImage: boolean;
+  
+  // Optional Health Data
+  completedDate: Date;
+  calories?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  
+  // Achievement Tracking
+  isPersonalBest: boolean;
+  personalBestType?: string;      // 'fastest_5k', 'longest_run', etc.
+  
+  // User Input
+  comment?: string;
+  notes?: string;
+  screenshotUrls: string[];       // JSON array
+  
+  // Relationships
+  user: User;
+  intervals: RunningInterval[];
+}
+```
+
+#### PlannedSession Entity - AI Coach assignments
+```typescript
+@Entity('planned_sessions')
+export class PlannedSession {
+  id: number;
+  trainingPlanId: number;
+  weeklyTrainingPlanId: number;
+  
+  // Session Details
+  sessionType: SessionTypeEnum;   // intervals, fixed_time, fixed_length, etc.
+  priority: SessionPriorityEnum;  // easy, moderate, hard, key_workout
+  scheduledDate: Date;
+  
+  // AI Coach Prescription
+  targetDistance?: number;        // decimal(5,2) in km
+  targetTime?: number;           // minutes
+  targetPace?: string;           // "mm:ss/km"
+  instructions: string;          // AI coach instructions
+  motivationalMessage?: string;
+  
+  // Interval Structure
+  warmupMinutes?: number;
+  cooldownMinutes?: number;
+  intervalStructure?: string;    // JSON for complex intervals
+  
+  // Status
+  isCompleted: boolean;
+  isKeyWorkout: boolean;
+  allowFlexibleScheduling: boolean;
+}
+```
+
+## Core Services Implementation
+
+### RunnerWorkflowService - Core business logic
+```typescript
+// Main workflow methods implemented:
+- getTodaysMission(userFid): Today's planned session + completion status
+- processWorkoutSession(data): Screenshot upload and AI processing
+- getRunDetail(userFid, runId): Detailed run information with achievements
+- getUserPerformanceData(userFid): Weekly progress and analytics
+- markSessionCompleted(userFid, sessionId, didComplete): Session completion
+- shareWorkoutAchievement(userFid, runId): Social sharing (stub)
+
+// Validation & Ban System:
+- validateWorkoutData(): Detects suspicious patterns and invalid submissions
+- handleInvalidWorkoutSubmission(): 3-strike ban system (1 week bans)
+- isUserBanned(): Check ban status with automatic expiration
+- getUserValidationStatus(): Current validation status and warnings
+```
+
+### ScreenshotProcessorService - AI processing
+```typescript
+// GPT-4 Vision integration with robust error handling
+- processScreenshots(imageBuffers): Main processing entry point
+- extractWorkoutDataFromImages(): GPT-4 Vision API calls
+- validateExtractedData(): Data sanitization and confidence scoring
+- healthCheck(): Service health monitoring
+
+// Fun error messages for non-workout images:
+- Returns humorous messages when users upload wrong images
+- Maintains user engagement with friendly feedback
+```
+
+### Validation & Anti-Fraud System
+```typescript
+// Suspicious pattern detection:
+- Impossibly fast paces (< 3 min/km)
+- Impossible speed for distance combinations
+- Unrealistic heart rate data (< 40 or > 220 bpm)
+- Suspicious calorie burn rates (> 20 cal/min)
+
+// Progressive ban system:
+- 3 invalid submissions = 1 week ban
+- Automatic ban expiration and reset
+- Ban history tracking for repeat offenders
+```
+
+## API Endpoints Implementation
+
+### Training Service Endpoints
+```typescript
+// Core Workflow (Implemented)
+GET    /training-service/runner-workflow/today
+POST   /training-service/runner-workflow/upload-run
+POST   /training-service/runner-workflow/complete-session/:id
+GET    /training-service/runner-workflow/performance
+GET    /training-service/runner-workflow/runs/:id
+GET    /training-service/runner-workflow/validation-status
+
+// Training Plans (Partially implemented)
+GET    /training-service/training-plan
+POST   /training-service/training-plan
+POST   /training-service/training-plan/generate-ai
+GET    /training-service/weekly-mission
+
+// Global Data
+GET    /training-service/workouts              // Global recent workouts
+GET    /training-service/leaderboard           // User rankings
+```
+
+### User Service Endpoints
+```typescript
+// User Management
+GET    /user-service/user/:fid                 // User by FID with recent sessions
+GET    /user-service/:fid                      // User profile with stats
+GET    /user-service/workouts                  // User's workout history
+GET    /user-service/stats                     // User's fitness stats
+GET    /user-service/leaderboard               // Fitness leaderboard
+GET    /user-service/all-workouts              // All users' workouts (public)
+
+PATCH  /user-service/user/:id                  // Update user (admin only)
+DELETE /user-service/user/:id                  // Delete user (admin only)
+```
+
+### Social Service Endpoints
+```typescript
+// Social Features (Mostly stubs)
+POST   /social-service/share-image
+POST   /social-service/farcaster-post
+GET    /social-service/feed
+GET    /social-service/activity
+
+// Webhook Processing (Implemented)
+POST   /social-service/farcaster/cast-webhook
+POST   /social-service/farcaster/cast-webhook/embed-filter
+POST   /social-service/farcaster/cast-webhook/user-filter
+GET    /social-service/farcaster/webhook-health
+```
+
+### Authentication & Security
+```typescript
+// Farcaster QuickAuth integration
+- AuthorizationGuard: Validates JWT tokens from Farcaster
+- AdminGuard: Restricts admin-only endpoints
+- Session decorator: Extracts user FID from JWT payload
+
+// Security Configuration
+- CSRF protection middleware
+- IP logging middleware
+- SSL support for production database connections
+- Input validation with class-validator
+```
+
+## Current Module Structure
+
+### Core Modules (Implemented)
+```typescript
+const CoreModules = [
+  UserModule,           // User management and profiles
+  AuthModule,           // Farcaster authentication
+  TrainingModule,       // Training plans and workout processing
+  CoachModule,          // AI coach system (basic)
+  AchievementModule,    // Streak tracking and achievements
+  SocialModule,         // Sharing and webhooks
+  NotificationModule,   // Notification system
+  EmbedsModule,         // Dynamic embeds
+  TokenModule,          // $RUNNER token economy
+];
+```
+
+### Key Service Dependencies
+```typescript
+// Training Module Services
+- TrainingService: Training plan management
+- RunnerWorkflowService: Core workout processing
+- ScreenshotProcessorService: AI image processing
+- DigitalOceanSpacesService: Image storage
+
+// Social Module Services  
+- SocialService: Community features and sharing
+- CastProcessorService: Farcaster webhook processing
+
+// User Module Services
+- UserService: User management and analytics
+```
+
+## Current Implementation Status
+
+### ✅ Fully Implemented
+- **Screenshot upload and AI processing**: Complete GPT-4 Vision integration
+- **User authentication**: Farcaster QuickAuth with JWT
+- **Workout tracking**: RunningSession creation and management
+- **Personal best detection**: Automatic PB tracking for 5K, 10K, longest run
+- **User stats and analytics**: Comprehensive UserStats entity
+- **Validation system**: Anti-fraud detection with progressive bans
+- **Global feeds**: Recent workouts and leaderboards
+- **Database schema**: All entities with proper relationships
+
+### 🚧 Partially Implemented
+- **Training plans**: Basic structure, AI generation pending
+- **Social sharing**: Webhook processing done, image generation pending
+- **Notifications**: Basic structure, scheduling logic needed
+- **Coach interactions**: Basic framework, AI personality pending
+
+### ⏳ Planned/Stub
+- **Share image generation**: Generate rich workout images
+- **Farcaster posting**: Automated cast creation
+- **Advanced AI coaching**: Personalized training plan generation
+- **Token reward system**: Automated token distribution
+- **Advanced analytics**: Trend analysis and predictions
+
+## Production Considerations
+
+### Database Configuration
+```typescript
+// Current: Development mode with synchronize enabled
+synchronize: true  // Should be false in production
+
+// SSL Configuration for DigitalOcean
+ssl: { rejectUnauthorized: false }  // Required for managed databases
+```
+
+### Error Handling & Logging
+- Comprehensive try-catch blocks in all services
+- Console logging for debugging (should use proper logger in production)
+- Graceful degradation for AI service failures
+- User-friendly error messages
+
+### Performance Optimizations
+- Denormalized quick stats in User entity
+- Pagination for all list endpoints
+- Connection pooling (connectionLimit: 10)
+- Confidence-based data validation
+
+### Security Features
+- Ban system prevents abuse
+- Input validation on all endpoints
+- Admin-only endpoints protected
+- JWT token validation
+- CSRF protection
+
+This backend provides a solid foundation for the RUNNER miniapp with core functionality implemented and clear paths for enhancement. The architecture supports scalability and maintains data integrity while providing engaging user experiences through AI-powered features and social gamification.
