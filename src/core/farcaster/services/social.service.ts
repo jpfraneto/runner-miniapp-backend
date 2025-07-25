@@ -12,6 +12,7 @@ import { User, RunningSession, RunningSessionStatus } from '../../../models';
 // Services
 import {
   CastProcessorService,
+  CastWorkoutData,
   FarcasterCastData,
 } from './cast-processor.service';
 import { TrainingService } from '../../training/services/training.service';
@@ -277,7 +278,7 @@ export class SocialService {
   private async saveWorkoutDataToSession(
     castHash: string,
     fid: number,
-    workoutData: any,
+    workoutData: CastWorkoutData,
   ): Promise<void> {
     try {
       console.log('💾 Saving workout data to session', {
@@ -474,49 +475,21 @@ export class SocialService {
 
       // Process the cast
       console.log(`🚀 Processing new cast: ${castHash}`);
-      const result = await this.castProcessorService.processCast(thisCast);
-      console.log('IN HERE, THE RESULT IS', result);
+      const result = (await this.castProcessorService.processCast(
+        thisCast,
+      )) as CastWorkoutData | null;
+      console.log('IN HERE, THE RESULT IS');
 
       // Only reply if we detected a workout with sufficient confidence AND we haven't replied before
-      let replyHash = null;
       if (result.isWorkoutImage) {
         // Check if we've already replied BEFORE marking as replied (atomic check-and-set)
-        if (this.hasAlreadyReplied(castHash)) {
-          console.log(
-            `⚠️  DUPLICATE REPLY PREVENTED: Already replied to cast ${castHash}`,
-          );
-        } else {
-          console.log(
-            `💬 Workout detected with confidence ${result.confidence} - sending reply`,
-          );
-
-          // Mark as replied IMMEDIATELY to prevent any race conditions
-          this.markAsReplied(castHash);
-
-          try {
-            if (mode !== 'seed') {
-              replyHash = await this.castProcessorService.replyToCast(
-                thisCast,
-                result,
-              );
-            }
-            console.log(
-              `🔍 THE BOT REPLIED WITH HASH: ${replyHash?.replyHash || replyHash}`,
-            );
-          } catch (error) {
-            console.error(
-              `❌ Failed to send reply to cast ${castHash}:`,
-              error,
-            );
-          }
-        }
         // Update database status based on processing result
         console.log(`💾 Updating cast ${castHash} status in database`);
 
         await this.saveWorkoutDataToSession(
           castHash,
           thisCast.author.fid,
-          result.extractedData,
+          result,
         );
 
         // Mark as fully processed in cache
@@ -535,7 +508,7 @@ export class SocialService {
           message: result.isWorkoutImage
             ? 'Workout detected and saved'
             : 'No workout detected',
-          replyHash: replyHash?.replyHash || replyHash,
+          replyHash: null,
           castHash: castHash,
           duplicate: false,
           run: {

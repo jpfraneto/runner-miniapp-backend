@@ -139,17 +139,18 @@ export class CastProcessorService {
     console.log('✅ Neynar client initialized');
   }
 
-  async replyToCast(castData: FarcasterCastData, result: any): Promise<any> {
+  async replyToCast(
+    castData: FarcasterCastData,
+    result: CastWorkoutData,
+  ): Promise<any> {
     try {
-      console.log('🔍 Creating encouraging reply to cast');
+      console.log('🔍 Creating simple reply to cast');
 
-      // Generate encouraging reply using AI
-      const replyText = await this.generateEncouragingReply(castData, result);
-
-      if (!replyText) {
-        console.log('❌ Failed to generate reply text');
-        return { message: 'Failed to generate reply' };
-      }
+      // Generate simple reply with distance and time
+      const distance = result.distance ? `${result.distance}km` : 'distance';
+      const time = result.duration ? `${result.duration} minutes` : 'time';
+      
+      const replyText = `Great run! A ${distance} session in ${time} has been saved to your running history. Keep it up! 🏃‍♂️`;
 
       // Post reply to Farcaster
       const reply = await this.postReplyToFarcaster(
@@ -608,7 +609,7 @@ export class CastProcessorService {
     }
   }
 
-  async processCast(castData: FarcasterCastData): Promise<any> {
+  async processCast(castData: FarcasterCastData): Promise<CastWorkoutData> {
     try {
       console.log(
         `📸 Processing cast with ${castData.embeds?.length || 0} embeds`,
@@ -662,7 +663,6 @@ export class CastProcessorService {
         this.logger.log('📷 Non-workout image detected, returning fun message');
         return {
           ...extractedData,
-          extractedData: extractedData,
         };
       }
 
@@ -680,9 +680,6 @@ export class CastProcessorService {
       // Return result in the format expected by the SocialService
       return {
         ...extractedData,
-        extractedData: extractedData, // Include the extracted data for the TrainingService
-        distance: extractedData.distance,
-        duration: extractedData.duration,
       };
     } catch (error) {
       console.error('❌ Cast processing failed:', error);
