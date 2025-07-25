@@ -53,6 +53,38 @@ export class LeaderboardController {
   }
 
   /**
+   * Get current week number
+   * URL: /leaderboard/current-week
+   */
+  @Get('current-week')
+  @ApiOperation({
+    summary: 'Get current week number',
+    description: 'Returns the current week number and timing info',
+  })
+  async getCurrentWeek(@Res() res: Response) {
+    try {
+      const currentWeek = this.leaderboardService.getCurrentWeekNumber();
+      const weekRange = this.leaderboardService.getWeekRange(currentWeek);
+      const nextResetTime = this.leaderboardService.getNextResetTime();
+      
+      return hasResponse(res, {
+        currentWeek,
+        weekRange,
+        nextResetTime,
+        currentTime: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('❌ [LeaderboardController] Failed to get current week:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'getCurrentWeek',
+        'Unable to retrieve current week number.',
+      );
+    }
+  }
+
+  /**
    * Get leaderboard for specific week
    * URL: /leaderboard/week?weekNumber={week}&year={year}
    */

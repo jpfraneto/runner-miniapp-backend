@@ -7,6 +7,7 @@ import { EmbedsModule } from './embeds/embeds.module';
 import { TrainingModule } from './training/training.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { AdminModule } from './admin/admin.module';
+import { WeekModule } from './week/week.module';
 
 /**
  * Core modules for the RUNNER Farcaster miniapp
@@ -31,6 +32,7 @@ const CoreModules = [
   TrainingModule, // Training plans and workout management
   LeaderboardModule, // Weekly leaderboards and rankings,
   AdminModule,
+  WeekModule, // Week calculation utilities for frontend
 ];
 
 export default CoreModules;

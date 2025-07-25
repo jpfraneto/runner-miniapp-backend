@@ -398,10 +398,33 @@ export class UserService {
     });
 
     // Calculate statistics from all sessions
-    const stats = this.calculateUserStats(allSessions);
+    let stats;
+    if (allSessions.length > 0) {
+      stats = this.calculateUserStats(allSessions);
+    } else {
+      stats = {
+        totalDistance: 0,
+        totalDuration: 0,
+        totalWorkouts: 0,
+      };
+    }
 
     // Get recent workouts with pagination (max 16)
-    const recentWorkouts = await this.getWorkoutHistory(user.fid, 1, 16);
+    let recentWorkouts = {
+      runs: [],
+      pagination: {
+        page: 1,
+        limit: 16,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
+
+    if (allSessions.length > 0) {
+      recentWorkouts = await this.getWorkoutHistory(user.fid, 1, 16);
+    }
 
     return {
       user: {
