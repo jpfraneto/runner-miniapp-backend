@@ -63,12 +63,11 @@ export class LeaderboardController {
   })
   async getWeeklyLeaderboard(
     @Query('weekNumber', ParseIntPipe) weekNumber: number,
-    @Query('year', ParseIntPipe) year: number = 2024,
     @Res() res: Response,
   ) {
     try {
       console.log(
-        `🏆 [LeaderboardController] Getting leaderboard for week ${weekNumber}, year ${year}`,
+        `🏆 [LeaderboardController] Getting leaderboard for week ${weekNumber}`,
       );
 
       // Validate week number (should be >= 0)
@@ -76,15 +75,14 @@ export class LeaderboardController {
         throw new BadRequestException('Week number must be >= 0');
       }
 
-      // Validate year (should be reasonable range)
-      if (year < 2024 || year > new Date().getFullYear() + 1) {
-        throw new BadRequestException('Invalid year provided');
-      }
-
-      const leaderboard = await this.leaderboardService.getWeeklyLeaderboard(
+      console.log(
+        '🏆 [LeaderboardController] Getting leaderboard for week',
         weekNumber,
-        year,
       );
+
+      const leaderboard =
+        await this.leaderboardService.getWeeklyLeaderboard(weekNumber);
+      console.log('🏆 [LeaderboardController] Leaderboard:', leaderboard);
 
       return hasResponse(res, leaderboard);
     } catch (error) {

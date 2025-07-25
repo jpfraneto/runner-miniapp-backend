@@ -19,10 +19,14 @@ export type Leaderboard = LeaderboardEntry[];
 
 @Injectable()
 export class LeaderboardService {
-  // Week zero date: July 19, 2024 at 18:00:00.000Z (3 PM Chile time)
-  private readonly WEEK_ZERO_DATE = new Date('2024-07-19T18:00:00.000Z');
-  // Chile timezone offset: UTC-3
-  private readonly CHILE_OFFSET = -3 * 60; // -3 hours in minutes
+  // Week resets every Friday at 3pm Chile time (UTC-3)
+  // Week counter starts from 0 (first week with data)
+  private readonly CHILE_TIMEZONE_OFFSET = -3; // UTC-3
+  private readonly WEEK_RESET_DAY = 5; // Friday (0 = Sunday, 1 = Monday, ..., 5 = Friday)
+  private readonly WEEK_RESET_HOUR = 15; // 3 PM
+
+  // Reference date for the end of week 0 - this is when the first leaderboard ended
+  private readonly WEEK_ZERO_END_DATE = new Date('2023-12-22T18:00:00.000Z');
 
   constructor(
     @InjectRepository(LeaderboardHistory)
@@ -59,29 +63,21 @@ export class LeaderboardService {
   /**
    * Get leaderboard for specific week
    */
-  async getWeeklyLeaderboard(
-    weekNumber: number,
-    year: number = 2024,
-  ): Promise<Leaderboard> {
-    // First try to get from LeaderboardHistory table (pre-calculated)
-    const historicalEntries = await this.leaderboardHistoryRepo.find({
-      where: { weekNumber },
-      relations: ['user'],
-      order: { rank: 'ASC' },
+  async getWeeklyLeaderboard(weekNumber: number): Promise<Leaderboard> {
+    console.log(
+      '🏆 [LeaderboardService] Getting leaderboard for week',
+      weekNumber,
+    );
+
+    // Get week range for the specified week
+    const weekRange = this.getWeekRange(weekNumber);
+
+    console.log('🏆 [LeaderboardService] Week range:', {
+      startDate: weekRange.startDate,
+      endDate: weekRange.endDate,
     });
 
-    if (historicalEntries.length > 0) {
-      return historicalEntries.map((entry, index) => ({
-        position: entry.rank,
-        fid: entry.user.fid,
-        username: entry.user.username,
-        totalKilometers: Number(entry.distanceKm),
-        totalRuns: 1, // We don't store runs count in LeaderboardHistory, so default to 1
-      }));
-    }
-
-    // If no historical data, calculate from running sessions
-    const weekRange = this.getWeekRange(weekNumber);
+    // Get all running sessions for the specified week
     const sessions = await this.runningSessionRepo
       .createQueryBuilder('session')
       .leftJoinAndSelect('session.user', 'user')
@@ -94,30 +90,54 @@ export class LeaderboardService {
       )
       .getMany();
 
+    console.log(
+      '🏆 [LeaderboardService] Found sessions for week:',
+      sessions.length,
+    );
+
     return this.buildLeaderboardFromSessions(sessions);
   }
 
   /**
-   * Get current week number (0-based, starting from July 19, 2024)
+   * Get current week number (0-based, starting from week 0 reference)
    */
   private getCurrentWeekNumber(): number {
-    const now = new Date();
-    const chileTime = this.convertToChileTime(now);
+    const now = this.getChileTime();
 
-    // Calculate weeks since week zero
-    const diffInMs = chileTime.getTime() - this.WEEK_ZERO_DATE.getTime();
-    const weeksSinceZero = Math.floor(diffInMs / (7 * 24 * 60 * 60 * 1000));
+    // Calculate the start of week 0 (7 days before the end date)
+    const weekZeroStart = new Date(this.WEEK_ZERO_END_DATE);
+    weekZeroStart.setDate(this.WEEK_ZERO_END_DATE.getDate() - 7);
 
-    return Math.max(0, weeksSinceZero);
+    // Calculate the current week start (last Friday 3pm)
+    let currentWeekStart = new Date(now);
+    const daysSinceFriday = (now.getDay() - this.WEEK_RESET_DAY + 7) % 7;
+
+    if (
+      now.getDay() === this.WEEK_RESET_DAY &&
+      now.getHours() >= this.WEEK_RESET_HOUR
+    ) {
+      // It's Friday after 3pm, so we're in the new week
+      currentWeekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
+    } else {
+      // Go back to the last Friday 3pm
+      currentWeekStart.setDate(now.getDate() - daysSinceFriday);
+      currentWeekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
+    }
+
+    // Calculate weeks since week zero start
+    const timeDiff = currentWeekStart.getTime() - weekZeroStart.getTime();
+    const weeksDiff = Math.floor(timeDiff / (7 * 24 * 60 * 60 * 1000));
+
+    return Math.max(0, weeksDiff);
   }
 
   /**
-   * Convert UTC time to Chile time (UTC-3)
+   * Get current time in Chile timezone (UTC-3)
    */
-  private convertToChileTime(utcDate: Date): Date {
-    const chileTime = new Date(
-      utcDate.getTime() + this.CHILE_OFFSET * 60 * 1000,
-    );
+  private getChileTime(): Date {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const chileTime = new Date(utc + this.CHILE_TIMEZONE_OFFSET * 3600000);
     return chileTime;
   }
 
@@ -125,14 +145,19 @@ export class LeaderboardService {
    * Get start and end dates for a specific week
    */
   private getWeekRange(weekNumber: number): { startDate: Date; endDate: Date } {
-    // Week resets every Friday at 3 PM Chile time
-    const weekStart = new Date(this.WEEK_ZERO_DATE);
-    weekStart.setTime(
-      weekStart.getTime() + weekNumber * 7 * 24 * 60 * 60 * 1000,
-    );
+    // Calculate the start of week 0 (7 days before the end date)
+    const weekZeroStart = new Date(this.WEEK_ZERO_END_DATE);
+    weekZeroStart.setDate(this.WEEK_ZERO_END_DATE.getDate() - 7);
 
+    // Calculate the start of the specified week (Friday 3pm)
+    const weekStart = new Date(weekZeroStart);
+    weekStart.setDate(weekZeroStart.getDate() + weekNumber * 7);
+    weekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
+
+    // Calculate the end of the week (next Friday 3pm)
     const weekEnd = new Date(weekStart);
-    weekEnd.setTime(weekEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    weekEnd.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
 
     return {
       startDate: weekStart,
@@ -156,6 +181,8 @@ export class LeaderboardService {
       }
     >();
 
+    console.log('🏆 [LeaderboardService] Sessions:', sessions);
+
     sessions.forEach((session) => {
       if (!session.user) return;
 
@@ -173,6 +200,8 @@ export class LeaderboardService {
         });
       }
     });
+
+    console.log('🏆 [LeaderboardService] User stats:', userStats);
 
     // Convert to leaderboard entries and sort by total distance
     const entries: LeaderboardEntry[] = Array.from(userStats.entries())
