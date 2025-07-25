@@ -176,6 +176,49 @@ export class CastProcessorService {
     }
   }
 
+  async sendRunCompletedNotification(
+    castData: FarcasterCastData,
+    workoutData: CastWorkoutData,
+  ): Promise<void> {
+    try {
+      console.log('📢 Sending run completion notification to all users');
+      
+      const username = castData.author.username;
+      const distance = workoutData.distance ? `${workoutData.distance}km` : 'Unknown distance';
+      const duration = workoutData.duration ? this.formatDuration(workoutData.duration) : 'Unknown time';
+      
+      const notification = {
+        title: `@${username} just ran`,
+        body: `${distance} on ${duration}!`,
+        target_url: `https://runnercoin.lat/run/${castData.hash}`,
+      };
+
+      // Send notification to all users (empty array means all users with notifications enabled)
+      const result = await this.neynarClient.publishFrameNotifications({
+        targetFids: [], // Empty array targets all users with notifications enabled
+        notification,
+      });
+
+      console.log('✅ Notification sent successfully:', result);
+    } catch (error) {
+      console.error('❌ Error sending notification:', error);
+      // Don't throw error to avoid disrupting the main cast processing flow
+    }
+  }
+
+  private formatDuration(minutes: number): string {
+    const totalMinutes = Math.floor(minutes);
+    const seconds = Math.floor((minutes - totalMinutes) * 60);
+    
+    if (totalMinutes >= 60) {
+      const hours = Math.floor(totalMinutes / 60);
+      const remainingMinutes = totalMinutes % 60;
+      return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+      return `${totalMinutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
+
   private async generateEncouragingReply(
     castData: FarcasterCastData,
     workoutData: CastWorkoutData,
@@ -675,6 +718,9 @@ export class CastProcessorService {
       if (extractedData.isWorkoutImage) {
         // Reply to the cast with encouragement
         await this.replyToCast(castData, extractedData);
+        
+        // Send notification to all users about the completed run
+        await this.sendRunCompletedNotification(castData, extractedData);
       }
 
       // Return result in the format expected by the SocialService
