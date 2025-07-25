@@ -19,13 +19,8 @@ export type Leaderboard = LeaderboardEntry[];
 
 @Injectable()
 export class LeaderboardService {
-  // Week resets every Friday at 3pm Chile time (UTC-3)
-  // Week counter starts from 0 (first week with data)
-  private readonly CHILE_TIMEZONE_OFFSET = -3; // UTC-3
-  private readonly WEEK_RESET_DAY = 5; // Friday (0 = Sunday, 1 = Monday, ..., 5 = Friday)
-  private readonly WEEK_RESET_HOUR = 15; // 3 PM
-
   // Reference date for the end of week 0 - this is when the first leaderboard ended
+  // Week resets every Friday at 3pm Chile time (UTC-3)
   private readonly WEEK_ZERO_END_DATE = new Date('2023-12-22T18:00:00.000Z');
 
   constructor(
@@ -99,69 +94,41 @@ export class LeaderboardService {
   }
 
   /**
-   * Get current week number (0-based, starting from week 0 reference)
+   * Get current week number using simplified timestamp math
    */
   private getCurrentWeekNumber(): number {
-    const now = this.getChileTime();
-
-    // Calculate the start of week 0 (7 days before the end date)
-    const weekZeroStart = new Date(this.WEEK_ZERO_END_DATE);
-    weekZeroStart.setDate(this.WEEK_ZERO_END_DATE.getDate() - 7);
-
-    // Calculate the current week start (last Friday 3pm)
-    let currentWeekStart = new Date(now);
-    const daysSinceFriday = (now.getDay() - this.WEEK_RESET_DAY + 7) % 7;
-
-    if (
-      now.getDay() === this.WEEK_RESET_DAY &&
-      now.getHours() >= this.WEEK_RESET_HOUR
-    ) {
-      // It's Friday after 3pm, so we're in the new week
-      currentWeekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
-    } else {
-      // Go back to the last Friday 3pm
-      currentWeekStart.setDate(now.getDate() - daysSinceFriday);
-      currentWeekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
-    }
-
-    // Calculate weeks since week zero start
-    const timeDiff = currentWeekStart.getTime() - weekZeroStart.getTime();
-    const weeksDiff = Math.floor(timeDiff / (7 * 24 * 60 * 60 * 1000));
-
-    return Math.max(0, weeksDiff);
+    const now = Date.now();
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+    const msSinceWeekZeroEnd = now - this.WEEK_ZERO_END_DATE.getTime();
+    const weeksPassed = Math.floor(msSinceWeekZeroEnd / WEEK_MS);
+    return Math.max(0, weeksPassed + 1);
   }
 
   /**
-   * Get current time in Chile timezone (UTC-3)
+   * Get the next reset time (next Friday 3pm Chile time)
    */
-  private getChileTime(): Date {
-    const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const chileTime = new Date(utc + this.CHILE_TIMEZONE_OFFSET * 3600000);
-    return chileTime;
+  private getNextResetTime(): Date {
+    const now = Date.now();
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+    const msSinceWeekZeroEnd = now - this.WEEK_ZERO_END_DATE.getTime();
+    const weeksPassed = Math.floor(msSinceWeekZeroEnd / WEEK_MS);
+    const nextResetMs = this.WEEK_ZERO_END_DATE.getTime() + (weeksPassed + 1) * WEEK_MS;
+    return new Date(nextResetMs);
   }
 
   /**
-   * Get start and end dates for a specific week
+   * Get start and end dates for a specific week using simplified timestamp math
    */
   private getWeekRange(weekNumber: number): { startDate: Date; endDate: Date } {
-    // Calculate the start of week 0 (7 days before the end date)
-    const weekZeroStart = new Date(this.WEEK_ZERO_END_DATE);
-    weekZeroStart.setDate(this.WEEK_ZERO_END_DATE.getDate() - 7);
-
-    // Calculate the start of the specified week (Friday 3pm)
-    const weekStart = new Date(weekZeroStart);
-    weekStart.setDate(weekZeroStart.getDate() + weekNumber * 7);
-    weekStart.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
-
-    // Calculate the end of the week (next Friday 3pm)
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 7);
-    weekEnd.setHours(this.WEEK_RESET_HOUR, 0, 0, 0);
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+    
+    // Calculate week start and end timestamps
+    const weekStartMs = this.WEEK_ZERO_END_DATE.getTime() + (weekNumber - 1) * WEEK_MS;
+    const weekEndMs = this.WEEK_ZERO_END_DATE.getTime() + weekNumber * WEEK_MS;
 
     return {
-      startDate: weekStart,
-      endDate: weekEnd,
+      startDate: new Date(weekStartMs),
+      endDate: new Date(weekEndMs),
     };
   }
 
