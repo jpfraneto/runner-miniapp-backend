@@ -133,7 +133,6 @@ export class CastProcessorService {
       },
     });
     this.neynarClient = new NeynarAPIClient(config);
-
   }
 
   async replyToCast(
@@ -141,11 +140,10 @@ export class CastProcessorService {
     result: CastWorkoutData,
   ): Promise<any> {
     try {
-
       // Generate simple reply with distance and time
       const distance = result.distance ? `${result.distance}km` : 'distance';
       const time = result.duration ? `${result.duration} minutes` : 'time';
-      
+
       const replyText = `Great run! A ${distance} session in ${time} has been saved to your running history. Keep it up! 🏃‍♂️`;
 
       // Post reply to Farcaster
@@ -176,11 +174,14 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<void> {
     try {
-      
       const username = castData.author.username;
-      const distance = workoutData.distance ? `${workoutData.distance}km` : 'Unknown distance';
-      const duration = workoutData.duration ? this.formatDuration(workoutData.duration) : 'Unknown time';
-      
+      const distance = workoutData.distance
+        ? `${workoutData.distance}km`
+        : 'Unknown distance';
+      const duration = workoutData.duration
+        ? this.formatDuration(workoutData.duration)
+        : 'Unknown time';
+
       const notification = {
         title: `@${username} just ran`,
         body: `${distance} on ${duration}!`,
@@ -192,7 +193,6 @@ export class CastProcessorService {
         targetFids: [], // Empty array targets all users with notifications enabled
         notification,
       });
-
     } catch (error) {
       console.error('❌ Error sending notification:', error);
       // Don't throw error to avoid disrupting the main cast processing flow
@@ -202,7 +202,7 @@ export class CastProcessorService {
   private formatDuration(minutes: number): string {
     const totalMinutes = Math.floor(minutes);
     const seconds = Math.floor((minutes - totalMinutes) * 60);
-    
+
     if (totalMinutes >= 60) {
       const hours = Math.floor(totalMinutes / 60);
       const remainingMinutes = totalMinutes % 60;
@@ -217,7 +217,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<string> {
     try {
-
       // Gather comprehensive user context
       const userContext = await this.gatherUserContext(
         castData.author.fid,
@@ -268,7 +267,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<any> {
     try {
-
       // Find user with available relationships
       const user = await this.userRepository.findOne({
         where: { fid },
@@ -609,7 +607,6 @@ export class CastProcessorService {
     idempotencyKey: string,
   ): Promise<any> {
     try {
-
       const signerUuid = process.env.NEYNAR_SIGNER_UUID;
 
       if (!signerUuid) {
@@ -623,7 +620,7 @@ export class CastProcessorService {
         idem: idempotencyKey,
         embeds: [
           {
-            url: `${this.config.isProduction ? 'https://api.runnercoin.lat' : 'https://poiesis.anky.app'}/embeds/run/${parentCastHash}`,
+            url: `https://runnercoin-backend-lrt9k.ondigitalocean.app/embeds/run/${parentCastHash}`,
           },
         ],
       });
@@ -663,13 +660,11 @@ export class CastProcessorService {
         }
       }
 
-
       // Extract workout data using GPT-4 Vision
       const extractedData = await this.extractWorkoutDataFromImages(
         base64Images,
         castData,
       );
-
 
       // Check if this wasn't a workout image
       if (!extractedData.isWorkoutImage) {
@@ -688,7 +683,7 @@ export class CastProcessorService {
       if (extractedData.isWorkoutImage) {
         // Reply to the cast with encouragement
         await this.replyToCast(castData, extractedData);
-        
+
         // Send notification to all users about the completed run
         await this.sendRunCompletedNotification(castData, extractedData);
       }
@@ -706,7 +701,6 @@ export class CastProcessorService {
 
   private async urlToBase64(url: string): Promise<string | null> {
     try {
-
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
@@ -745,10 +739,7 @@ export class CastProcessorService {
       if (error.name === 'AbortError') {
         console.error(`Request timeout for ${url}`);
       } else {
-        console.error(
-          `Failed to convert ${url} to base64:`,
-          error.message,
-        );
+        console.error(`Failed to convert ${url} to base64:`, error.message);
       }
       return null;
     }
@@ -758,7 +749,6 @@ export class CastProcessorService {
     base64Images: string[],
     castData: FarcasterCastData,
   ): Promise<CastWorkoutData> {
-
     // Try primary prompt first
     const extractedData = await this.tryExtractWithPrompt(
       base64Images,
@@ -963,7 +953,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<void> {
     try {
-
       // Find or create user
       let user = await this.userRepository.findOne({
         where: { fid: castData.author.fid },
@@ -1011,7 +1000,6 @@ export class CastProcessorService {
       user.lastActiveAt = completedDate;
 
       await this.userRepository.save(user);
-
     } catch (error) {
       console.error('❌ Error saving workout to database:', error);
       throw error;

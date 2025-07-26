@@ -6,11 +6,11 @@ import { Repository } from 'typeorm';
 import { LeaderboardHistory } from '../../../models/LeaderboardHistory/LeaderboardHistory.model';
 import { RunningSession } from '../../../models/RunningSession/RunningSession.model';
 import { User } from '../../../models/User/User.model';
-import { 
-  WEEK_ZERO_END_DATE, 
-  getCurrentWeekNumber as getWeekNumber, 
+import {
+  WEEK_ZERO_END_DATE,
+  getCurrentWeekNumber as getWeekNumber,
   getWeekRange as getWeekRangeUtil,
-  getWeekForTimestamp 
+  getWeekForTimestamp,
 } from '../../../constants/week-calculation';
 
 export interface LeaderboardEntry {
@@ -25,7 +25,6 @@ export type Leaderboard = LeaderboardEntry[];
 
 @Injectable()
 export class LeaderboardService {
-
   constructor(
     @InjectRepository(LeaderboardHistory)
     private readonly leaderboardHistoryRepo: Repository<LeaderboardHistory>,
@@ -63,11 +62,16 @@ export class LeaderboardService {
       )
       .getMany();
 
-    console.log('🏆 [LeaderboardService] Found sessions for current week:', sessions.length);
+    console.log(
+      '🏆 [LeaderboardService] Found sessions for current week:',
+      sessions.length,
+    );
     console.log('🏆 [LeaderboardService] Recent sessions timestamps:');
-    sessions.slice(-5).forEach(session => {
+    sessions.slice(-5).forEach((session) => {
       const sessionWeek = getWeekForTimestamp(session.createdAt);
-      console.log(`🏆   ${session.user?.username || 'unknown'}: ${session.createdAt.toISOString()} (Week ${sessionWeek})`);
+      console.log(
+        `🏆   ${session.user?.username || 'unknown'}: ${session.createdAt.toISOString()} (Week ${sessionWeek})`,
+      );
     });
 
     return this.buildLeaderboardFromSessions(sessions);
@@ -126,7 +130,8 @@ export class LeaderboardService {
     const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
     const msSinceWeekZeroEnd = now - WEEK_ZERO_END_DATE.getTime();
     const weeksPassed = Math.floor(msSinceWeekZeroEnd / WEEK_MS);
-    const nextResetMs = WEEK_ZERO_END_DATE.getTime() + (weeksPassed + 1) * WEEK_MS;
+    const nextResetMs =
+      WEEK_ZERO_END_DATE.getTime() + (weeksPassed + 1) * WEEK_MS;
     return new Date(nextResetMs);
   }
 
@@ -153,8 +158,6 @@ export class LeaderboardService {
       }
     >();
 
-    console.log('🏆 [LeaderboardService] Sessions:', sessions);
-
     sessions.forEach((session) => {
       if (!session.user) return;
 
@@ -172,8 +175,6 @@ export class LeaderboardService {
         });
       }
     });
-
-    console.log('🏆 [LeaderboardService] User stats:', userStats);
 
     // Convert to leaderboard entries and sort by total distance
     const entries: LeaderboardEntry[] = Array.from(userStats.entries())
