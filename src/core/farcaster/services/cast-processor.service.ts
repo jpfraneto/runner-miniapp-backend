@@ -119,7 +119,6 @@ export class CastProcessorService {
     // @InjectRepository(FarcasterCast)
     // private readonly farcasterCastRepository: Repository<FarcasterCast>,
   ) {
-    console.log('🔧 Initializing CastProcessorService');
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -135,8 +134,6 @@ export class CastProcessorService {
     });
     this.neynarClient = new NeynarAPIClient(config);
 
-    console.log('✅ OpenAI client initialized');
-    console.log('✅ Neynar client initialized');
   }
 
   async replyToCast(
@@ -144,7 +141,6 @@ export class CastProcessorService {
     result: CastWorkoutData,
   ): Promise<any> {
     try {
-      console.log('🔍 Creating simple reply to cast');
 
       // Generate simple reply with distance and time
       const distance = result.distance ? `${result.distance}km` : 'distance';
@@ -159,7 +155,6 @@ export class CastProcessorService {
         uuidv4(),
       );
 
-      console.log('✅ Successfully replied to cast');
       return {
         success: true,
         replyText: replyText,
@@ -181,7 +176,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<void> {
     try {
-      console.log('📢 Sending run completion notification to all users');
       
       const username = castData.author.username;
       const distance = workoutData.distance ? `${workoutData.distance}km` : 'Unknown distance';
@@ -199,7 +193,6 @@ export class CastProcessorService {
         notification,
       });
 
-      console.log('✅ Notification sent successfully:', result);
     } catch (error) {
       console.error('❌ Error sending notification:', error);
       // Don't throw error to avoid disrupting the main cast processing flow
@@ -224,7 +217,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<string> {
     try {
-      console.log('🤖 Generating encouraging reply using AI with user context');
 
       // Gather comprehensive user context
       const userContext = await this.gatherUserContext(
@@ -261,14 +253,12 @@ export class CastProcessorService {
         throw new Error('No reply generated');
       }
 
-      console.log('✅ Generated personalized reply:', replyText);
       return replyText;
     } catch (error) {
       console.error('❌ Error generating reply:', error);
 
       // Fallback reply
       const fallbackReply = this.generateFallbackReply(workoutData);
-      console.log('📝 Using fallback reply:', fallbackReply);
       return fallbackReply;
     }
   }
@@ -278,7 +268,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<any> {
     try {
-      console.log('📊 Gathering comprehensive user context for FID:', fid);
 
       // Find user with available relationships
       const user = await this.userRepository.findOne({
@@ -287,7 +276,6 @@ export class CastProcessorService {
       });
 
       if (!user) {
-        console.log('👤 User not found, using basic context');
         return { isNewUser: true, username: 'runner' };
       }
 
@@ -621,9 +609,6 @@ export class CastProcessorService {
     idempotencyKey: string,
   ): Promise<any> {
     try {
-      console.log('📤 Posting reply to Farcaster');
-      console.log('   Parent cast:', parentCastHash);
-      console.log('   Reply text:', replyText);
 
       const signerUuid = process.env.NEYNAR_SIGNER_UUID;
 
@@ -642,9 +627,7 @@ export class CastProcessorService {
           },
         ],
       });
-      console.log('🔍 THE REPLY:', reply);
 
-      console.log('✅ Reply posted successfully:', reply?.cast?.hash);
       return reply;
     } catch (error) {
       console.error('❌ Error posting reply:', error);
@@ -654,9 +637,6 @@ export class CastProcessorService {
 
   async processCast(castData: FarcasterCastData): Promise<CastWorkoutData> {
     try {
-      console.log(
-        `📸 Processing cast with ${castData.embeds?.length || 0} embeds`,
-      );
       this.logger.log(`Processing cast ${castData.hash} with GPT-4 Vision`);
 
       // Filter image embeds
@@ -671,35 +651,25 @@ export class CastProcessorService {
       );
 
       // Convert image URLs to base64
-      console.log('🔄 Converting image URLs to base64');
       const base64Images = [];
 
       for (let i = 0; i < imageEmbeds.length; i++) {
         const embed = imageEmbeds[i];
-        console.log(`   📸 Processing embed ${i + 1}/${imageEmbeds.length}:`);
-        console.log(`      URL: ${embed.url}`);
 
         const base64 = await this.urlToBase64(embed.url);
         if (base64) {
           base64Images.push(base64);
-          console.log(`      ✅ Added to processing queue`);
         } else {
-          console.log(`      ❌ Failed to convert, skipping`);
         }
       }
 
-      console.log(
-        `✅ Converted ${base64Images.length}/${imageEmbeds.length} images to base64`,
-      );
 
       // Extract workout data using GPT-4 Vision
-      console.log('🤖 Extracting workout data using GPT-4 Vision');
       const extractedData = await this.extractWorkoutDataFromImages(
         base64Images,
         castData,
       );
 
-      console.log('📊 Extracted data:', JSON.stringify(extractedData, null, 2));
 
       // Check if this wasn't a workout image
       if (!extractedData.isWorkoutImage) {
@@ -736,7 +706,6 @@ export class CastProcessorService {
 
   private async urlToBase64(url: string): Promise<string | null> {
     try {
-      console.log(`   🔗 Fetching image from: ${url}`);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -759,7 +728,6 @@ export class CastProcessorService {
       }
 
       const contentType = response.headers.get('content-type');
-      console.log(`   📄 Content-Type: ${contentType}`);
 
       if (contentType && !contentType.startsWith('image/')) {
         console.error(
@@ -772,16 +740,13 @@ export class CastProcessorService {
       const buffer = Buffer.from(arrayBuffer);
       const base64 = buffer.toString('base64');
 
-      console.log(
-        `   ✅ Successfully converted image (${buffer.length} bytes)`,
-      );
       return base64;
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.error(`   ❌ Request timeout for ${url}`);
+        console.error(`Request timeout for ${url}`);
       } else {
         console.error(
-          `   ❌ Failed to convert ${url} to base64:`,
+          `Failed to convert ${url} to base64:`,
           error.message,
         );
       }
@@ -793,7 +758,6 @@ export class CastProcessorService {
     base64Images: string[],
     castData: FarcasterCastData,
   ): Promise<CastWorkoutData> {
-    console.log('🔍 Starting workout data extraction from images');
 
     // Try primary prompt first
     const extractedData = await this.tryExtractWithPrompt(
@@ -808,9 +772,6 @@ export class CastProcessorService {
       extractedData.isWorkoutImage &&
       (!extractedData.reasoning || extractedData.reasoning.trim().length < 20)
     ) {
-      console.log(
-        '⚠️ Primary extraction missing proper reasoning, trying fallback prompt',
-      );
       const fallbackData = await this.tryExtractWithPrompt(
         base64Images,
         castData,
@@ -823,9 +784,6 @@ export class CastProcessorService {
         fallbackData.reasoning &&
         fallbackData.reasoning.trim().length >= 20
       ) {
-        console.log(
-          '✅ Fallback prompt provided better reasoning, using fallback result',
-        );
         return fallbackData;
       }
     }
@@ -840,9 +798,6 @@ export class CastProcessorService {
     promptType: string,
   ): Promise<CastWorkoutData> {
     try {
-      console.log(
-        `🤖 Making API request to GPT-4 Vision with ${promptType} prompt`,
-      );
       const imageEmbeds = castData.embeds.filter(
         (embed) =>
           embed.url &&
@@ -881,23 +836,20 @@ export class CastProcessorService {
         temperature: 0.1, // Low temperature for consistent extraction
       });
 
-      console.log(`✅ Received response from GPT-4 Vision (${promptType})`);
       const content = response.choices[0]?.message?.content;
-      console.log(`📄 GPT-4 Vision response (${promptType}):`, content);
 
       if (!content) {
-        console.error(`❌ No content in GPT-4 Vision response (${promptType})`);
+        console.error(`No content in GPT-4 Vision response (${promptType})`);
         throw new Error(`No response from GPT-4 Vision (${promptType})`);
       }
 
       // Clean the response to ensure it's valid JSON
-      console.log(`🧹 Cleaning JSON response (${promptType})`);
       const cleanedContent = content.trim();
       const jsonStart = cleanedContent.indexOf('{');
       const jsonEnd = cleanedContent.lastIndexOf('}');
 
       if (jsonStart === -1 || jsonEnd === -1) {
-        console.error(`❌ Invalid JSON structure in response (${promptType})`);
+        console.error(`Invalid JSON structure in response (${promptType})`);
         throw new Error(
           `Invalid JSON response from GPT-4 Vision (${promptType})`,
         );
@@ -906,12 +858,10 @@ export class CastProcessorService {
       const jsonString = cleanedContent.substring(jsonStart, jsonEnd + 1);
 
       // Parse the JSON response
-      console.log(`📝 Parsing JSON response (${promptType})`);
       const extractedData: CastWorkoutData = JSON.parse(jsonString);
 
       // Check if this is not a workout image
       if (extractedData.isWorkoutImage === false) {
-        console.log(`📷 Non-workout image detected (${promptType})`);
         return {
           isWorkoutImage: false,
           confidence: 0,
@@ -920,10 +870,9 @@ export class CastProcessorService {
       }
 
       // Validate and sanitize the extracted data for workout images
-      console.log(`✨ Validating extracted workout data (${promptType})`);
       return this.validateExtractedData(extractedData);
     } catch (error) {
-      console.error(`❌ GPT-4 Vision API error (${promptType}):`, error);
+      console.error(`GPT-4 Vision API error (${promptType}):`, error);
       this.logger.error(`GPT-4 Vision API error (${promptType}):`, error);
 
       // Return a fallback response with low confidence
@@ -941,14 +890,12 @@ export class CastProcessorService {
   }
 
   private validateExtractedData(data: any): CastWorkoutData {
-    console.log('🔍 Starting data validation');
     const validated: CastWorkoutData = {
       isWorkoutImage: true,
       confidence: 0,
     };
 
     // Validate numeric fields
-    console.log('📊 Validating numeric fields');
     if (
       typeof data.distance === 'number' &&
       data.distance > 0 &&
@@ -966,7 +913,6 @@ export class CastProcessorService {
     }
 
     // Validate reasoning
-    console.log('🧠 Validating reasoning field');
     if (
       typeof data.reasoning === 'string' &&
       data.reasoning.trim().length > 0
@@ -985,12 +931,11 @@ export class CastProcessorService {
           validated.completedDate = data.completedDate;
         }
       } catch (e) {
-        console.warn('⚠️ Invalid completed date format');
+        console.warn('Invalid completed date format');
       }
     }
 
     // Validate confidence
-    console.log('🎯 Calculating confidence score');
     if (
       typeof data.confidence === 'number' &&
       data.confidence >= 0 &&
@@ -1010,7 +955,6 @@ export class CastProcessorService {
       validated.confidence = Math.min(dataPoints / maxPoints, 0.9); // Max 90% confidence
     }
 
-    console.log('✅ Data validation complete');
     return validated;
   }
 
@@ -1019,7 +963,6 @@ export class CastProcessorService {
     workoutData: CastWorkoutData,
   ): Promise<void> {
     try {
-      console.log('💾 Saving workout to database', castData, workoutData);
 
       // Find or create user
       let user = await this.userRepository.findOne({
@@ -1027,7 +970,6 @@ export class CastProcessorService {
       });
 
       if (!user) {
-        console.log(`👤 Creating new user for FID: ${castData.author.fid}`);
         user = this.userRepository.create({
           fid: castData.author.fid,
           username: castData.author.username,
@@ -1070,7 +1012,6 @@ export class CastProcessorService {
 
       await this.userRepository.save(user);
 
-      console.log('✅ Successfully saved workout to database');
     } catch (error) {
       console.error('❌ Error saving workout to database:', error);
       throw error;
@@ -1082,7 +1023,6 @@ export class CastProcessorService {
    */
   async healthCheck(): Promise<{ status: string; model: string }> {
     try {
-      console.log('🏥 Running health check');
       // Test with a simple request
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -1095,7 +1035,6 @@ export class CastProcessorService {
         ],
       });
 
-      console.log('✅ Health check successful');
       return {
         status: response ? 'healthy' : 'unhealthy',
         model: 'gpt-4o-mini',

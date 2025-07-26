@@ -66,11 +66,8 @@ export class AuthService implements OnModuleInit {
     await this.ensureFarcasterClient();
 
     try {
-      logger.log('Verifying QuickAuth token:', token);
       const domain = 'runnercoin.lat';
-      logger.log('Domain:', domain);
       const payload = await this.farcasterClient.verifyJwt({ token, domain });
-      logger.log('Payload:', payload);
 
       if (!payload || !payload.sub) {
         throw new Error('Invalid token payload: missing user FID');
@@ -80,10 +77,8 @@ export class AuthService implements OnModuleInit {
     } catch (error) {
       logger.error('QuickAuth token verification failed once:', error.message);
       try {
-        console.log('Verifying token with miniapp.anky.app');
         const domain = 'miniapp.anky.app';
         const payload = await this.farcasterClient.verifyJwt({ token, domain });
-        logger.log('Payload:', payload);
 
         if (!payload || !payload.sub) {
           throw new Error('Invalid token payload: missing user FID');
