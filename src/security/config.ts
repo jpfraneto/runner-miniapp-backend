@@ -17,12 +17,6 @@ const logger = new Logger('APISystem');
 
 export const getConfig = () => {
   // Debug logging to see what environment variables are being read
-  console.log('🔍 Database Environment Variables:');
-  console.log('DATABASE_HOST:', process.env.DATABASE_HOST);
-  console.log('DATABASE_PORT:', process.env.DATABASE_PORT);
-  console.log('DATABASE_USER:', process.env.DATABASE_USER);
-  console.log('DATABASE_NAME:', process.env.DATABASE_NAME);
-  console.log('DATABASE_SSL:', process.env.DATABASE_SSL);
 
   const config = {
     identifier: process.env.IDENTIFIER || 'RUNNER API',
@@ -145,14 +139,6 @@ export const getConfig = () => {
       `);
     },
   };
-
-  // Debug logging to see the final config
-  console.log('🔧 Final Database Config:');
-  console.log('Host:', config.db.host);
-  console.log('Port:', config.db.port);
-  console.log('Username:', config.db.username);
-  console.log('Database:', config.db.name);
-  console.log('SSL:', config.db.requireSSL);
 
   return config;
 };

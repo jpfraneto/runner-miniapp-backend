@@ -279,6 +279,7 @@ export class SocialService {
     castHash: string,
     fid: number,
     workoutData: CastWorkoutData,
+    castTimestamp: string,
   ): Promise<void> {
     try {
       console.log('💾 Saving workout data to session', {
@@ -322,6 +323,7 @@ export class SocialService {
       }
       console.log('💾 SAVING WORKOUT DATA TO SESSION', session);
       session.status = RunningSessionStatus.COMPLETED;
+      session.createdAt = new Date(castTimestamp);
 
       await this.runningSessionRepository.save(session);
 
@@ -490,6 +492,7 @@ export class SocialService {
           castHash,
           thisCast.author.fid,
           result,
+          thisCast.timestamp,
         );
 
         // Mark as fully processed in cache
