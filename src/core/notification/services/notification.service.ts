@@ -397,7 +397,7 @@ export class NotificationService {
           NotificationTypeEnum.DAILY_REMINDER,
           '🏃‍♂️ Time to run!',
           'Track your run today and earn points! Keep up your fitness streak!',
-          `${this.config.notifications.baseUrl}/track`,
+          `${this.config.notifications.baseUrl}`,
           new Date(),
           `daily_reminder_${user.fid}_${today}`, // Explicit idempotency key
         );
@@ -457,7 +457,7 @@ export class NotificationService {
           NotificationTypeEnum.EVENING_REMINDER,
           '⏰ Last chance to track your run today!',
           "Don't break your fitness streak! Track your run now and earn points.",
-          `${this.config.notifications.baseUrl}/track`,
+          `${this.config.notifications.baseUrl}`,
           new Date(),
           `evening_reminder_${user.fid}_${today}`, // Different key from morning
         );
@@ -534,7 +534,7 @@ export class NotificationService {
           NotificationTypeEnum.WEEKLY_ACHIEVEMENT,
           '🏆 Weekly Running Achievement!',
           "Check out this week's top runners and achievements! Keep pushing your limits!",
-          `${this.config.notifications.baseUrl}/achievements`,
+          `${this.config.notifications.baseUrl}`,
           new Date(),
           `weekly_achievement_${user.fid}_${weekKey}`, // Week-specific idempotency
         );
@@ -587,7 +587,7 @@ export class NotificationService {
       NotificationTypeEnum.WELCOME,
       '🎉 Welcome to $runner!',
       'Start tracking your runs and earn points. Join our running community!',
-      `${this.config.notifications.baseUrl}/welcome`,
+      `${this.config.notifications.baseUrl}`,
       new Date(),
       `welcome_${user.fid}`,
     );

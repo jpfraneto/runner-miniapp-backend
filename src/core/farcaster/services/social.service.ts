@@ -289,17 +289,15 @@ export class SocialService {
       });
 
       // Find or create user
-      const user = await this.userRepository.findOne({
+      let user = await this.userRepository.findOne({
         where: { fid },
       });
 
       if (!user) {
         console.log(`👤 Creating new user for FID: ${fid}`);
-        // Note: We'll need user data from the cast, but for now we can create a minimal user
-        // In a real scenario, we should get this data from the cast author info
-        throw new Error(
-          `User with FID ${fid} not found. User must be created first.`,
-        );
+        user = await this.userRepository.create({
+          fid,
+        });
       }
 
       // Update the running session with actual workout data
