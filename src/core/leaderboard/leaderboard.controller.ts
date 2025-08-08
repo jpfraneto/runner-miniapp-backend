@@ -66,7 +66,7 @@ export class LeaderboardController {
       const currentWeek = this.leaderboardService.getCurrentWeekNumber();
       const weekRange = this.leaderboardService.getWeekRange(currentWeek);
       const nextResetTime = this.leaderboardService.getNextResetTime();
-      
+
       return hasResponse(res, {
         currentWeek,
         weekRange,
@@ -74,7 +74,10 @@ export class LeaderboardController {
         currentTime: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('❌ [LeaderboardController] Failed to get current week:', error);
+      console.error(
+        '❌ [LeaderboardController] Failed to get current week:',
+        error,
+      );
       return hasError(
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -114,7 +117,6 @@ export class LeaderboardController {
 
       const leaderboard =
         await this.leaderboardService.getWeeklyLeaderboard(weekNumber);
-      console.log('🏆 [LeaderboardController] Leaderboard:', leaderboard);
 
       return hasResponse(res, leaderboard);
     } catch (error) {
