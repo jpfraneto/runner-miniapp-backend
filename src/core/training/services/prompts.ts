@@ -306,7 +306,7 @@ Return ONLY the JSON object with no additional text.`;
 export const PROMPT_THREE = `You are an expert at analyzing farcaster casts and extracting comprehensive intentions from them. You must be extremely careful with JSON formatting.
 
 CRITICAL INSTRUCTIONS:
-1. First determine if these are workout screenshots from running/fitness apps, or the cast text references a specific running session. Summaries are not workouts. It needs to be a specific running session for it to be considered a workout image.
+1. First determine if these are workout screenshots from running/fitness apps, or the cast text references a specific running or walkingsession. Summaries are not workouts. It needs to be a specific running or walking session for it to be considered a workout image.
 2. If NOT workout screenshots (or text where the workout and its stats is mentioned), return the simple non-workout JSON
 3. If YES workout screenshots, extract ONLY the distance and duration with perfect JSON formatting
 4. NEVER use comments (//) in JSON - they break parsing

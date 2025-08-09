@@ -816,7 +816,7 @@ export class CastProcessorService {
             content: [
               {
                 type: 'text',
-                text: `Analyze the following cast. Understand by its context if the user is sharing a specific running session, or something different.  Return only valid JSON. The cast text is: ${castData.text}. It has ${castData.embeds.length} embeds, out of which ${imageEmbeds.length} are images.`,
+                text: `Analyze the following cast. Understand by its context if the user is sharing a specific running or walking session, or something different.  Return only valid JSON. The cast text is: ${castData.text}. It has ${castData.embeds.length} embeds, out of which ${imageEmbeds.length} are images.`,
               },
               ...base64Images.map((image) => ({
                 type: 'image_url' as const,
