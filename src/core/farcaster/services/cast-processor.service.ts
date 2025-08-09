@@ -665,6 +665,11 @@ export class CastProcessorService {
         base64Images,
         castData,
       );
+      console.log(
+        'THE EXTRACTED DATA FOR HASH IS',
+        castData.hash,
+        extractedData,
+      );
 
       // Check if this wasn't a workout image
       if (!extractedData.isWorkoutImage) {
