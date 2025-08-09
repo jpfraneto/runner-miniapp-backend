@@ -832,6 +832,7 @@ export class CastProcessorService {
       });
 
       const content = response.choices[0]?.message?.content;
+      console.log('THE CONTENT FOR HASH IS', castData.hash, content);
 
       if (!content) {
         console.error(`No content in GPT-4 Vision response (${promptType})`);
