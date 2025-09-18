@@ -22,7 +22,7 @@ import { HttpStatus, hasError, hasResponse } from '../../utils';
 import { User, UserRoleEnum } from '../../models';
 import { DatabaseSeedingService } from './services/database-seeding.service';
 
-const adminFids = [16098];
+const adminFids = [16098, 473065, 7464, 248111];
 
 @ApiTags('admin-service')
 @Controller('admin-service')
@@ -792,6 +792,97 @@ export class AdminController {
         res,
         HttpStatus.INTERNAL_SERVER_ERROR,
         'getCompletedRunStats',
+        error.message,
+      );
+    }
+  }
+
+  // ================================
+  // ADMIN MODERATION ACTIONS
+  // ================================
+
+  /**
+   * Delete a run by castHash and update user stats
+   */
+  @Delete('runs/:castHash')
+  async deleteRun(
+    @Session() user: QuickAuthPayload,
+    @Param('castHash') castHash: string,
+    @Res() res: Response,
+  ) {
+    console.log(`deleteRun called - user: ${user.sub}, castHash: ${castHash}`);
+
+    if (!adminFids.includes(user.sub)) {
+      console.log(`Access denied for user ${user.sub} - not in admin list`);
+      return hasError(
+        res,
+        HttpStatus.FORBIDDEN,
+        'deleteRun',
+        'Admin access required',
+      );
+    }
+
+    try {
+      console.log(`Deleting run ${castHash}...`);
+      await this.adminService.deleteRun(castHash);
+      console.log('Run deleted successfully');
+
+      return hasResponse(res, {
+        message: 'Run deleted successfully and user stats updated',
+        castHash,
+      });
+    } catch (error) {
+      console.error('Error in deleteRun:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'deleteRun',
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Ban a user by FID and delete all their runs
+   */
+  @Post('users/:fid/ban')
+  async banUser(
+    @Session() user: QuickAuthPayload,
+    @Param('fid') fid: number,
+    @Res() res: Response,
+  ) {
+    console.log(`banUser called - user: ${user.sub}, target fid: ${fid}`);
+
+    if (!adminFids.includes(user.sub)) {
+      console.log(`Access denied for user ${user.sub} - not in admin list`);
+      return hasError(
+        res,
+        HttpStatus.FORBIDDEN,
+        'banUser',
+        'Admin access required',
+      );
+    }
+
+    try {
+      console.log(`Banning user ${fid} and deleting all runs...`);
+      const bannedUser = await this.adminService.banUser(fid);
+      console.log('User banned successfully:', {
+        fid: bannedUser.fid,
+        username: bannedUser.username,
+        isBanned: bannedUser.isBanned,
+        bannedAt: bannedUser.bannedAt,
+      });
+
+      return hasResponse(res, {
+        user: bannedUser,
+        message: 'User banned successfully and all runs deleted',
+      });
+    } catch (error) {
+      console.error('Error in banUser:', error);
+      return hasError(
+        res,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'banUser',
         error.message,
       );
     }

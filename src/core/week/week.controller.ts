@@ -1,11 +1,11 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
-import { 
-  WEEK_ZERO_END_DATE, 
-  getCurrentWeekNumber, 
+import {
+  WEEK_ZERO_END_DATE,
+  getCurrentWeekNumber,
   getWeekRange,
-  getWeekForTimestamp 
+  getWeekForTimestamp,
 } from '../../constants/week-calculation';
 import { hasResponse, hasError, HttpStatus } from '../../utils';
 
@@ -19,13 +19,14 @@ export class WeekController {
   @Get('current')
   @ApiOperation({
     summary: 'Get current week information',
-    description: 'Returns current week number, range, and constants for frontend use',
+    description:
+      'Returns current week number, range, and constants for frontend use',
   })
   async getCurrentWeek(@Res() res: Response) {
     try {
       const currentWeek = getCurrentWeekNumber();
       const weekRange = getWeekRange(currentWeek);
-      
+
       return hasResponse(res, {
         currentWeek,
         weekRange,

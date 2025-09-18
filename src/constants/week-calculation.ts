@@ -17,9 +17,12 @@ export function getCurrentWeekNumber(): number {
 /**
  * Get start and end dates for a specific week using simplified timestamp math
  */
-export function getWeekRange(weekNumber: number): { startDate: Date; endDate: Date } {
+export function getWeekRange(weekNumber: number): {
+  startDate: Date;
+  endDate: Date;
+} {
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-  
+
   // Calculate week start and end timestamps
   const weekStartMs = WEEK_ZERO_END_DATE.getTime() + (weekNumber - 1) * WEEK_MS;
   const weekEndMs = WEEK_ZERO_END_DATE.getTime() + weekNumber * WEEK_MS;

@@ -381,4 +381,79 @@ export class AdminService {
       averageDuration,
     };
   }
+
+  // ================================
+  // ADMIN MODERATION ACTIONS
+  // ================================
+
+  /**
+   * Delete a run by castHash and update user stats
+   */
+  async deleteRun(castHash: string): Promise<void> {
+    const session = await this.runningSessionRepository.findOne({
+      where: { castHash },
+      relations: ['user'],
+    });
+
+    if (!session) {
+      throw new Error(`Run with castHash ${castHash} not found`);
+    }
+
+    const user = session.user;
+
+    // Update user stats by subtracting this run's data
+    if (session.distanceMeters && session.duration) {
+      user.totalRuns = Math.max(0, user.totalRuns - 1);
+      user.totalDistance = Math.max(
+        0,
+        user.totalDistance - session.distanceMeters / 1000,
+      );
+      user.totalTimeMinutes = Math.max(
+        0,
+        user.totalTimeMinutes - session.duration,
+      );
+
+      await this.userRepository.save(user);
+    }
+
+    // Delete the running session
+    await this.runningSessionRepository.remove(session);
+    console.log(`Run ${castHash} deleted and user stats updated`);
+  }
+
+  /**
+   * Ban a user by FID and delete all their runs
+   */
+  async banUser(fid: number): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { fid },
+      relations: ['runningSessions'],
+    });
+
+    if (!user) {
+      throw new Error(`User with FID ${fid} not found`);
+    }
+
+    // Delete all running sessions (this will cascade delete leaderboard entries due to foreign key constraints)
+    if (user.runningSessions && user.runningSessions.length > 0) {
+      await this.runningSessionRepository.remove(user.runningSessions);
+      console.log(
+        `Deleted ${user.runningSessions.length} runs for user ${fid}`,
+      );
+    }
+
+    // Reset user stats and ban them
+    user.totalRuns = 0;
+    user.totalDistance = 0;
+    user.totalTimeMinutes = 0;
+    user.currentStreak = 0;
+    user.longestStreak = 0;
+    user.isBanned = true;
+    user.bannedAt = new Date();
+
+    const bannedUser = await this.userRepository.save(user);
+    console.log(`User ${fid} banned and all data deleted`);
+
+    return bannedUser;
+  }
 }
