@@ -432,7 +432,8 @@ export class TrainingService {
       .groupBy('session.fid')
       .addGroupBy('user.username')
       .addGroupBy('user.pfpUrl')
-      .having('COUNT(session.id) > 0'); // Only include users with at least one workout
+      .having('COUNT(session.id) > 0') // Only include users with at least one workout
+      .andHaving('SUM(session.distanceMeters) > 0'); // Exclude users with 0 total distance
 
     // Add time period filter if weekly
     if (timePeriod === 'weekly') {
