@@ -144,7 +144,7 @@ export class CastProcessorService {
       const distance = result.distance ? `${result.distance}km` : 'distance';
       const time = result.duration ? `${result.duration} minutes` : 'time';
 
-      const replyText = `Great run! A ${distance} session in ${time} has been saved to your running history. Keep it up! 🏃‍♂️\n\nEach week, the top 8 runners split 100% of the $runner share of trading fees—12.5% each, based on distance logged.`;
+      const replyText = `Great run! A ${distance} session in ${time} has been saved to your running history. Keep it up! 🏃‍♂️\n\nEach week, the top 20 runners split 100% of the $runner share of trading fees—5% each, based on distance logged.`;
 
       // Post reply to Farcaster
       const reply = await this.postReplyToFarcaster(
