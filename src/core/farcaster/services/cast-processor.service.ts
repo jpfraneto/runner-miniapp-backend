@@ -185,7 +185,7 @@ export class CastProcessorService {
       const notification = {
         title: `@${username} just ran`,
         body: `${distance} on ${duration}!`,
-        target_url: `https://runnercoin.lat`,
+        target_url: `https://runnercoin.lat/cast/${castData.hash}`,
       };
 
       // Send notification to all users (empty array means all users with notifications enabled)
