@@ -620,7 +620,7 @@ export class CastProcessorService {
         idem: idempotencyKey,
         embeds: [
           {
-            url: `https://runnercoin-backend-lrt9k.ondigitalocean.app/embeds/run/${parentCastHash}`,
+            url: `https://runner-miniapp-backend-production.up.railway.app/embeds/run/${parentCastHash}`,
           },
         ],
       });
