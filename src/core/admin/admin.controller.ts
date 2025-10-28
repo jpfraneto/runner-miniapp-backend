@@ -21,6 +21,12 @@ import { Session } from '../../security/decorators';
 import { HttpStatus, hasError, hasResponse } from '../../utils';
 import { User, UserRoleEnum } from '../../models';
 import { DatabaseSeedingService } from './services/database-seeding.service';
+import { BotReplyRecoveryService } from './services/bot-reply-recovery.service';
+import { CastFetchingService } from './services/cast-fetching.service';
+import { SocialService } from '../farcaster/services/social.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { RunningSession } from '../../models/RunningSession/RunningSession.model';
 
 const adminFids = [16098, 473065, 7464, 248111];
 
@@ -34,6 +40,11 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly databaseSeedingService: DatabaseSeedingService,
+    private readonly botReplyRecoveryService: BotReplyRecoveryService,
+    private readonly castFetchingService: CastFetchingService,
+    private readonly socialService: SocialService,
+    @InjectRepository(RunningSession)
+    private readonly runningSessionRepository: Repository<RunningSession>,
   ) {
     console.log('AdminController initialized');
   }
@@ -414,48 +425,39 @@ export class AdminController {
     }
   }
 
-  // @Get('make-db-reset')
-  // @UseGuards(AuthorizationGuard)
+  /**
+   * Emergency data recovery endpoint - NO SAFEGUARDS
+   * Completely rebuilds database from Neynar /running channel
+   */
+  // @Get('emergency-data-recovery')
   // @ApiOperation({
   //   summary:
-  //     'Complete database seeding: wipe clean + fetch all /running casts + create weekly leaderboards (FID 16098 only)',
+  //     'EMERGENCY: Complete database recovery from Neynar (NO SAFEGUARDS)',
   //   description:
-  //     'Wipes database clean, fetches ALL casts from /running channel, processes chronologically starting from oldest, creates weekly leaderboards with Friday 2pm Chile time boundaries. Use concurrency parameter to control parallel processing (default: 4)',
+  //     'Wipes database clean (unless resume=true), fetches ALL casts from /running channel, processes chronologically starting from oldest, creates weekly leaderboards. NO AUTHENTICATION REQUIRED - USE ONLY FOR EMERGENCY RECOVERY. Use resume=true to continue from existing data.',
   // })
   // @ApiResponse({
   //   status: 200,
-  //   description: 'Complete database seeding completed successfully',
+  //   description: 'Emergency data recovery completed successfully',
   // })
-  // async seedCompleteDatabase(
-  //   @Session() user: any,
+  // async emergencyDataRecovery(
   //   @Query('concurrency') concurrency: number = 4,
+  //   @Query('resume') resume: boolean = false,
   // ) {
-  //   const authenticatedFid = user.sub;
-  //   console.log('IN HEREEEEEEE,', authenticatedFid);
-
-  //   // Authorization check - only FID 16098 can trigger this
-  //   if (authenticatedFid !== 16098) {
-  //     this.logger.warn(
-  //       `🚫 Unauthorized complete seeding attempt by FID ${authenticatedFid}`,
-  //     );
-  //     throw new UnauthorizedException(
-  //       'Only authorized users can trigger complete database seeding',
-  //     );
-  //   }
-
-  //   this.logger.log(
-  //     `🌱 Complete database seeding triggered by FID ${authenticatedFid}`,
-  //   );
+  //   this.logger.log('🚨 EMERGENCY DATA RECOVERY TRIGGERED - NO SAFEGUARDS');
+  //   this.logger.log(`🔄 Resume mode: ${resume ? 'ENABLED' : 'DISABLED'}`);
 
   //   try {
-  //     const result =
-  //       await this.databaseSeedingService.seedCompleteDatabase(concurrency);
+  //     const result = await this.databaseSeedingService.seedCompleteDatabase(
+  //       concurrency,
+  //       resume,
+  //     );
 
   //     if (result.success) {
-  //       this.logger.log('🎉 Complete database seeding completed successfully');
+  //       this.logger.log('🎉 Emergency data recovery completed successfully');
   //       return {
   //         success: true,
-  //         message: 'Complete database seeding completed successfully',
+  //         message: 'Emergency data recovery completed successfully',
   //         data: result.summary,
   //         weeks: result.weeks?.map((week) => ({
   //           weekNumber: week.weekNumber,
@@ -471,23 +473,215 @@ export class AdminController {
   //         })),
   //       };
   //     } else {
-  //       this.logger.error('❌ Complete database seeding failed:', result.error);
+  //       this.logger.error('❌ Emergency data recovery failed:', result.error);
   //       return {
   //         success: false,
-  //         message: 'Complete database seeding failed',
+  //         message: 'Emergency data recovery failed',
   //         error: result.error,
   //         partialData: result.summary,
   //       };
   //     }
   //   } catch (error) {
-  //     this.logger.error('❌ Error during complete database seeding:', error);
+  //     this.logger.error('❌ Error during emergency data recovery:', error);
   //     return {
   //       success: false,
-  //       message: 'Complete database seeding failed with exception',
+  //       message: 'Emergency data recovery failed with exception',
   //       error: error.message,
   //     };
   //   }
   // }
+
+  /**
+   * Bot reply recovery endpoint - NO SAFEGUARDS
+   * Finds missed runs by checking bot replies and processing missing parent casts
+   */
+  // @Get('bot-reply-recovery')
+  // @UseGuards(AuthorizationGuard)
+  // @ApiOperation({
+  //   summary: 'EMERGENCY: Recover missed runs from bot replies (NO SAFEGUARDS)',
+  //   description:
+  //     'Fetches ALL bot replies from Neynar, extracts parent cast hashes, checks which are missing from database, and processes them. Preserves existing data. NO AUTHENTICATION REQUIRED.',
+  // })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Bot reply recovery completed successfully',
+  // })
+  // async botReplyRecovery() {
+  //   this.logger.log('🤖 BOT REPLY RECOVERY TRIGGERED - NO SAFEGUARDS');
+
+  //   try {
+  //     const result = await this.botReplyRecoveryService.recoverFromBotReplies();
+
+  //     this.logger.log('🎉 Bot reply recovery completed successfully');
+  //     return {
+  //       success: true,
+  //       message: 'Bot reply recovery completed successfully',
+  //       data: {
+  //         totalRepliesFetched: result.totalRepliesFetched,
+  //         parentCastsFound: result.parentCastsFound,
+  //         parentCastsInDatabase: result.parentCastsInDatabase,
+  //         missingParentCasts: result.missingParentCasts,
+  //         parentCastsProcessed: result.parentCastsProcessed,
+  //         errors: result.errors,
+  //       },
+  //       missingCastHashes: result.missingCastHashes,
+  //       summary: `Found ${result.missingParentCasts} missing runs out of ${result.parentCastsFound} bot replies. Processed ${result.parentCastsProcessed} successfully.`,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error('❌ Bot reply recovery failed:', error);
+  //     return {
+  //       success: false,
+  //       message: 'Bot reply recovery failed with exception',
+  //       error: error.message,
+  //     };
+  //   }
+  // }
+
+  /**
+   * Fetch recent casts recovery endpoint - NO SAFEGUARDS
+   * Fetches recent casts from /running channel and processes any unprocessed ones
+   */
+  // @Get('fetch-recent-casts')
+  // @UseGuards(AuthorizationGuard)
+  // @ApiOperation({
+  //   summary: 'Fetch and process recent unprocessed casts from /running channel',
+  //   description:
+  //     "Fetches the latest casts from /running channel, checks which haven't been processed yet, and processes them. Preserves existing data. NO AUTHENTICATION REQUIRED.",
+  // })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Recent casts recovery completed successfully',
+  // })
+  // async fetchRecentCasts(@Query('limit') limit: number = 50) {
+  //   this.logger.log('🔄 RECENT CASTS RECOVERY TRIGGERED - NO SAFEGUARDS');
+
+  //   try {
+  //     // Step 1: Fetch recent casts from /running channel
+  //     this.logger.log('📡 Fetching recent casts from /running channel...');
+  //     const { newCasts } = await this.castFetchingService.scrapeNewCasts();
+
+  //     // Step 2: Load the casts data to check what we have
+  //     const castsData = await this.loadCastsFromFile();
+  //     const recentCasts = castsData.slice(0, limit);
+
+  //     this.logger.log(`📋 Found ${recentCasts.length} recent casts to check`);
+
+  //     // Step 3: Check which casts haven't been processed yet
+  //     const unprocessedCasts = [];
+  //     const processedCount = 0;
+
+  //     for (const cast of recentCasts) {
+  //       const existingSession = await this.runningSessionRepository.findOne({
+  //         where: { castHash: cast.castHash },
+  //       });
+
+  //       if (!existingSession) {
+  //         unprocessedCasts.push(cast);
+  //       }
+  //     }
+
+  //     this.logger.log(
+  //       `🔍 Found ${unprocessedCasts.length} unprocessed casts out of ${recentCasts.length} recent casts`,
+  //     );
+
+  //     // Step 4: Process unprocessed casts
+  //     let processedSuccessfully = 0;
+  //     const errors = [];
+
+  //     for (const cast of unprocessedCasts) {
+  //       try {
+  //         this.logger.log(`🔄 Processing cast ${cast.castHash}...`);
+
+  //         // Convert to the format expected by SocialService
+  //         const farcasterCastData = {
+  //           hash: cast.castHash,
+  //           timestamp: cast.timestamp,
+  //           text: cast.text,
+  //           thread_hash: cast.castHash,
+  //           parent_hash: null,
+  //           parent_url: null,
+  //           root_parent_url: null,
+  //           author: {
+  //             object: 'user',
+  //             fid: cast.author.fid,
+  //             username: cast.author.username,
+  //             display_name: cast.author.username,
+  //             pfp_url: cast.author.pfp_url,
+  //             custody_address: '',
+  //             profile: {},
+  //             follower_count: 0,
+  //             following_count: 0,
+  //             verifications: [],
+  //           },
+  //           embeds: cast.embeds,
+  //           reactions: cast.reactions,
+  //           replies: cast.replies,
+  //           mentioned_profiles: [],
+  //           mentioned_profiles_ranges: [],
+  //           mentioned_channels: [],
+  //           mentioned_channels_ranges: [],
+  //         };
+
+  //         // Process the cast using existing social service
+  //         const webhookData = {
+  //           created_at: new Date(farcasterCastData.timestamp).getTime() / 1000,
+  //           type: 'cast.created',
+  //           data: farcasterCastData,
+  //         };
+  //         await this.socialService.processCastWebhook(webhookData, 'recovery');
+  //         processedSuccessfully++;
+  //         this.logger.log(`✅ Successfully processed cast ${cast.castHash}`);
+  //       } catch (error) {
+  //         this.logger.error(
+  //           `❌ Error processing cast ${cast.castHash}:`,
+  //           error,
+  //         );
+  //         errors.push({
+  //           castHash: cast.castHash,
+  //           error: error.message,
+  //         });
+  //       }
+  //     }
+
+  //     this.logger.log('🎉 Recent casts recovery completed successfully');
+  //     return {
+  //       success: true,
+  //       message: 'Recent casts recovery completed successfully',
+  //       data: {
+  //         totalRecentCastsChecked: recentCasts.length,
+  //         unprocessedCastsFound: unprocessedCasts.length,
+  //         castsProcessedSuccessfully: processedSuccessfully,
+  //         errors: errors.length,
+  //         errorDetails: errors,
+  //       },
+  //       summary: `Checked ${recentCasts.length} recent casts. Found ${unprocessedCasts.length} unprocessed. Successfully processed ${processedSuccessfully}.`,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error('❌ Recent casts recovery failed:', error);
+  //     return {
+  //       success: false,
+  //       message: 'Recent casts recovery failed with exception',
+  //       error: error.message,
+  //     };
+  //   }
+  // }
+
+  private async loadCastsFromFile(): Promise<any[]> {
+    try {
+      const fs = require('fs').promises;
+      const path = require('path');
+      const castsFilePath = path.join(
+        process.cwd(),
+        'data',
+        'running_casts.json',
+      );
+      const castsData = JSON.parse(await fs.readFile(castsFilePath, 'utf8'));
+      return castsData;
+    } catch (error) {
+      this.logger.error('❌ Error loading casts from file:', error);
+      return [];
+    }
+  }
 
   /**
    * Get users with notifications enabled

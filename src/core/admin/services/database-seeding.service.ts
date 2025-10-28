@@ -72,12 +72,15 @@ export class DatabaseSeedingService {
 
   /**
    * Complete database seeding process
-   * 1. Wipe database clean
+   * 1. Wipe database clean (unless resuming)
    * 2. Fetch ALL casts from /running channel
    * 3. Process chronologically (oldest first)
    * 4. Create weekly leaderboards
    */
-  async seedCompleteDatabase(concurrency: number = 4): Promise<{
+  async seedCompleteDatabase(
+    concurrency: number = 4,
+    resume: boolean = false,
+  ): Promise<{
     success: boolean;
     summary: {
       castsFetched: number;
@@ -104,10 +107,14 @@ export class DatabaseSeedingService {
     };
 
     try {
-      // Step 1: Wipe database clean
-      this.logger.log('🧹 Step 1: Wiping database clean...');
-      await this.wipeDatabaseClean();
-      this.logger.log('✅ Database wiped clean');
+      // Step 1: Wipe database clean (unless resuming)
+      if (!resume) {
+        this.logger.log('🧹 Step 1: Wiping database clean...');
+        await this.wipeDatabaseClean();
+        this.logger.log('✅ Database wiped clean');
+      } else {
+        this.logger.log('🔄 Step 1: Resuming from existing data - skipping wipe');
+      }
 
       // Step 2: Fetch ALL casts from /running channel
       this.logger.log('📡 Step 2: Fetching ALL casts from /running channel...');
@@ -117,11 +124,18 @@ export class DatabaseSeedingService {
         `✅ Fetched ${allCasts.length} casts from /running channel`,
       );
 
-      // Step 3: Sort casts chronologically (oldest first)
+      // Step 3: Filter and sort casts (skip already processed if resuming)
       this.logger.log(
         '📅 Step 3: Sorting casts chronologically (oldest first)...',
       );
-      const sortedCasts = this.sortCastsChronologically(allCasts);
+      let sortedCasts = this.sortCastsChronologically(allCasts);
+      
+      if (resume) {
+        this.logger.log('🔄 Filtering out already processed casts...');
+        sortedCasts = await this.filterUnprocessedCasts(sortedCasts);
+        this.logger.log(`📊 Found ${sortedCasts.length} unprocessed casts to resume from`);
+      }
+      
       this.logger.log(`✅ Sorted ${sortedCasts.length} casts chronologically`);
 
       // Step 4: Process casts in parallel through pipeline
@@ -230,6 +244,43 @@ export class DatabaseSeedingService {
       const dateB = new Date(b.timestamp).getTime();
       return dateA - dateB; // Oldest first
     });
+  }
+
+  /**
+   * Filter out casts that have already been processed (for resume functionality)
+   */
+  private async filterUnprocessedCasts(casts: CastData[]): Promise<CastData[]> {
+    this.logger.log(`🔍 Checking ${casts.length} casts for processing status...`);
+    
+    const processedHashes = new Set<string>();
+    
+    // Get all existing running sessions in batches to avoid memory issues
+    const batchSize = 1000;
+    let offset = 0;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const sessions = await this.runningSessionRepo.find({
+        select: ['castHash'],
+        skip: offset,
+        take: batchSize,
+      });
+      
+      sessions.forEach(session => {
+        processedHashes.add(session.castHash);
+      });
+      
+      hasMore = sessions.length === batchSize;
+      offset += batchSize;
+    }
+    
+    this.logger.log(`📊 Found ${processedHashes.size} already processed casts in database`);
+    
+    // Filter out already processed casts
+    const unprocessedCasts = casts.filter(cast => !processedHashes.has(cast.castHash));
+    
+    this.logger.log(`✅ ${unprocessedCasts.length} casts remain to be processed`);
+    return unprocessedCasts;
   }
 
   /**
