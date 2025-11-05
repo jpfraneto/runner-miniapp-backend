@@ -615,14 +615,18 @@ export class UserService {
    * @returns {Promise<User>} The updated user entity
    * @throws {Error} If the admin is not authorized or user is not found
    */
+
+  private readonly ADMIN_FIDS = [16098, 473065, 7464, 248111];
   async banUser(
     targetFid: User['fid'],
     adminFid: User['fid'],
     reason?: string,
   ): Promise<User> {
     // Check if the admin is authorized (only FID 16098 can ban)
-    if (adminFid !== 16098) {
-      throw new Error('Unauthorized: Only FID 16098 can ban users');
+    if (!this.ADMIN_FIDS.includes(adminFid)) {
+      throw new Error(
+        `Unauthorized: Only ${this.ADMIN_FIDS.join(', ')} can ban users`,
+      );
     }
 
     // Find the target user
@@ -666,8 +670,10 @@ export class UserService {
     adminFid: User['fid'],
   ): Promise<User> {
     // Check if the admin is authorized (only FID 16098 can unban)
-    if (adminFid !== 16098) {
-      throw new Error('Unauthorized: Only FID 16098 can unban users');
+    if (!this.ADMIN_FIDS.includes(adminFid)) {
+      throw new Error(
+        `Unauthorized: Only ${this.ADMIN_FIDS.join(', ')} can unban users`,
+      );
     }
 
     // Find the target user

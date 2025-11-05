@@ -35,7 +35,6 @@ const adminFids = [16098, 473065, 7464, 248111];
 @UseGuards(AuthorizationGuard)
 export class AdminController {
   private readonly logger = new Logger(AdminController.name);
-  private readonly AUTHORIZED_FID = 16098;
 
   constructor(
     private readonly adminService: AdminService,
