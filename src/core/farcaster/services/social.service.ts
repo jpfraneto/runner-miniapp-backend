@@ -478,7 +478,7 @@ export class SocialService {
       const result = (await this.castProcessorService.processCast(
         thisCast,
       )) as CastWorkoutData | null;
-      console.log('IN HERE, THE RESULT IS');
+      console.log('IN HERE, THE RESULT IS', result.isWorkoutImage);
 
       // Only reply if we detected a workout with sufficient confidence AND we haven't replied before
       if (result.isWorkoutImage) {

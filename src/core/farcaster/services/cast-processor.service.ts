@@ -140,6 +140,7 @@ export class CastProcessorService {
     result: CastWorkoutData,
   ): Promise<any> {
     try {
+      console.log('INSIDE THE REPLY TO CAST FUNCTION', castData.hash);
       // Generate simple reply with distance and time
       const distance = result.distance ? `${result.distance}km` : 'distance';
       const time = result.duration ? `${result.duration} minutes` : 'time';
@@ -670,7 +671,7 @@ export class CastProcessorService {
         castData.hash,
         extractedData,
       );
-
+      console.log('THE IS WORKOUT IMAGE IS', extractedData.isWorkoutImage);
       // Check if this wasn't a workout image
       if (!extractedData.isWorkoutImage) {
         this.logger.log('📷 Non-workout image detected, returning fun message');
